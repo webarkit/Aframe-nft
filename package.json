@@ -1,0 +1,39 @@
+{
+  "name": "aframe-nft",
+  "version": "0.1.0",
+  "description": "aframe with ARnft",
+  "main": "dist/AframeNft.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack",
+    "start": "webpack-dev-server"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/webarkit/Aframe-nft.git"
+  },
+  "keywords": [
+    "aframe",
+    "Arnft"
+  ],
+  "author": "@kalwalt",
+  "license": "LGPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/webarkit/Aframe-nft/issues"
+  },
+  "homepage": "https://github.com/webarkit/Aframe-nft#readme",
+  "dependencies": {
+    "@webarkit/ar-nft": "^0.14.10",
+    "aframe": "^1.6.0",
+    "webpack": "^5.97.1",
+    "webpack-cli": "^6.0.1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.18.13",
+    "@babel/preset-env": "^7.18.10",
+    "babel-loader": "^8.2.5",
+    "webpack": "^5.74.0",
+    "webpack-cli": "^4.10.0",
+    "webpack-dev-server": "^4.10.0"
+  }
+}
