@@ -46552,11 +46552,13 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _webarkit_ar_nft__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! @webarkit/ar-nft */ "./node_modules/@webarkit/ar-nft/dist/ARnft.js");
 /* harmony import */ var _webarkit_ar_nft__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(_webarkit_ar_nft__WEBPACK_IMPORTED_MODULE_1__);
 /* harmony import */ var _cameraViewRenderer__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./cameraViewRenderer */ "./src/cameraViewRenderer.js");
+/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./utils */ "./src/utils.js");
 
 
 const {
   ARnft
 } = (_webarkit_ar_nft__WEBPACK_IMPORTED_MODULE_1___default());
+
 
 AFRAME.registerSystem('arnft', {
   schema: {
@@ -46593,14 +46595,34 @@ AFRAME.registerComponent('nft-anchor', {
   },
   init: function () {
     console.log('a-nft component init');
-    console.log(this.data);
+    //console.log(this.data);
     //console.log(this.system);
-    const sysNft = this.el.sceneEl.systems.arnft;
-    console.log('arnft is: ', sysNft);
-    sysNft.arNFT.initializeRaw([[this.data.markerUrl]], [[this.data.entityName]], sysNft.camV, true);
+    this.sysNft = this.el.sceneEl.systems.arnft;
+    console.log('sysNft is: ', this.sysNft);
+    this.sysNft.arNFT.initializeRaw([[this.data.markerUrl]], [[this.data.entityName]], this.sysNft.camV, true);
+    const mesh = this.el.object3D;
+    window.addEventListener("getProjectionMatrix", ev => {
+      (0,_utils__WEBPACK_IMPORTED_MODULE_3__.setMatrix)(this.sysNft.el.camera.projectionMatrix, ev.detail.proj);
+    });
+    window.addEventListener("getNFTData-" + this.sysNft.uuid + "-" + this.data.entityName, ev => {
+      console.log('msg from event: ', ev.detail);
+      const msg = ev.detail;
+      mesh.position.y = msg.height / msg.dpi * 2.54 * 10 / 2.0;
+      mesh.position.x = msg.width / msg.dpi * 2.54 * 10 / 2.0;
+    });
   },
   tick: function () {
-    this.el.object3D.visible = true;
+    const mesh = this.el.object3D;
+    window.addEventListener("getMatrixGL_RH-" + this.sysNft.uuid + "-" + this.data.entityName, ev => {
+      //root.visible = true;
+      mesh.visible = true;
+      mesh.matrixAutoUpdate = false;
+      (0,_utils__WEBPACK_IMPORTED_MODULE_3__.setMatrix)(mesh.matrix, ev.detail.matrixGL_RH);
+    });
+    window.addEventListener("nftTrackingLost-" + this.sysNft.uuid + "-" + this.data.entityName, ev => {
+      //root.visible = false;
+      mesh.visible = false;
+    });
   }
 });
 AFRAME.registerPrimitive('a-nft', AFRAME.utils.extendDeep({}, AFRAME.primitives.getMeshMixin(), {
@@ -46612,6 +46634,31 @@ AFRAME.registerPrimitive('a-nft', AFRAME.utils.extendDeep({}, AFRAME.primitives.
     entityName: 'nft-anchor.entityName'
   }
 }));
+
+/***/ }),
+
+/***/ "./src/utils.js":
+/*!**********************!*\
+  !*** ./src/utils.js ***!
+  \**********************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   setMatrix: () => (/* binding */ setMatrix)
+/* harmony export */ });
+function setMatrix(matrix, value) {
+  const array = [];
+  for (const key in value) {
+    array[key] = value[key];
+  }
+  if (typeof matrix.elements.set === "function") {
+    matrix.elements.set(array);
+  } else {
+    matrix.elements = [].slice.call(array);
+  }
+}
 
 /***/ })
 
