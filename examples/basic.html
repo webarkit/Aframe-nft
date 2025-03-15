@@ -13,10 +13,14 @@
     </div>
     <script src="../dist/AframeNft.js"></script>
     <a-scene arnft="videoWidth: 1280; videoHeight: 720">
-        <a-nft nft-anchor="entityName:ping;markerUrl:examples/DataNFT/pinball">
+
+        <a-nft name="ping" url="examples/DataNFT/pinball">
+            <!--<a-box  color="#4CC3D9"></a-box>-->
             <a-box scale="120 120 120" color="#4CC3D9"></a-box>
         </a-nft>
+
         <a-entity camera></a-entity>
+
     </a-scene>
 </body>
 </html>

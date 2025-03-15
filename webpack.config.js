@@ -1,8 +1,8 @@
 const path = require('path');
 module.exports = {
-  mode: 'development',
+  //mode: 'development',
   entry: path.join(__dirname, 'src', 'index'),
-  watch: true,
+  //watch: true,
   output: {
     path: path.join(__dirname, 'dist'),
     publicPath: '/dist/',
@@ -12,12 +12,10 @@ module.exports = {
   module: {
     rules: [{
       test: /.jsx?$/,
-      include: [
-        path.resolve(__dirname, 'src')
+     include: [
+        path.resolve(__dirname, 'src'),
       ],
-      exclude: [
-        path.resolve(__dirname, 'node_modules')
-      ],
+      exclude: /node_modules/,
       loader: 'babel-loader',
       options: {
         presets: [
