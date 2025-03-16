@@ -6,6 +6,7 @@ import {setMatrix} from './utils'
 
 AFRAME.registerSystem('arnft', {
     container: null,
+    video: null,
     schema: {
         // Define schema of system here
         videoWidth: {
@@ -21,8 +22,8 @@ AFRAME.registerSystem('arnft', {
         console.info('arnft system init');
         this.arNFT = new ARnft(this.data.videoWidth, this.data.videoHeight, './config.json');
         this.uuid = this.arNFT.uuid;
-        const video = document.getElementById("video");
-        this.camV = new cameraViewRenderer(video);
+        this.video = document.getElementById("video");
+        this.camV = new cameraViewRenderer(this.video);
     }
 });
 
@@ -41,7 +42,18 @@ AFRAME.registerComponent('nft-anchor', {
         }
     },
     setupCamera: function (proj) {
+        const video = this.video;
         const container = this.container;
+        let vw, vh; // display css width, height
+        const videoRatio = video.videoWidth / video.videoHeight;
+        const containerRatio = container.clientWidth / container.clientHeight;
+        if (videoRatio > containerRatio) {
+            vh = container.clientHeight;
+            vw = vh * videoRatio;
+        } else {
+            vw = container.clientWidth;
+            vh = vw / videoRatio;
+        }
         const fov = 2 * Math.atan(1/proj[5] / vh * container.clientHeight ) * 180 / Math.PI; // vertical fov
         const near = proj[14] / (proj[10] - 1.0);
         const far = proj[14] / (proj[10] + 1.0);
@@ -62,7 +74,6 @@ AFRAME.registerComponent('nft-anchor', {
         this.video.style.left = (-(vw - container.clientWidth) / 2) + "px";
         this.video.style.width = vw + "px";
         this.video.style.height = vh + "px";*/
-
     },
     init: function () {
         this.container = this.el.sceneEl.parentNode;
@@ -95,15 +106,16 @@ AFRAME.registerComponent('nft-anchor', {
             this.markerWidth = msg.width;
             //this.markerWidth = 1;
             this.markerHeight = msg.height;
+            const scaleFactor = 200;
 
             //console.log('msg from event: ',  ((msg.height / msg.dpi) * 2.54 * 10) / 2.0)
             //position.y = ((this.markerHeight / msg.dpi) * 2.54 * 10) / 2.0;
             //position.x = ((this.markerWidth / msg.dpi) * 2.54 * 10) / 2.0;
             position.x = this.markerWidth / 2;
             position.y = this.markerWidth / 2 + (this.markerHeight - this.markerWidth) / 2;
-            scale.x = this.markerWidth;
-            scale.y = this.markerWidth;
-            scale.z = this.markerWidth;
+            scale.x = scaleFactor;
+            scale.y = scaleFactor;
+            scale.z = scaleFactor;
             this.postMatrix.compose(position, quaternion, scale);
             console.log(this.postMatrix)
         });
