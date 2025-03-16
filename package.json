@@ -25,14 +25,14 @@
   "homepage": "https://github.com/webarkit/Aframe-nft#readme",
   "dependencies": {
     "@webarkit/ar-nft": "^0.14.10",
-    "aframe": "^1.6.0"
+    "aframe": "^1.7.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.18.13",
-    "@babel/preset-env": "^7.18.10",
-    "babel-loader": "^8.2.5",
+    "@babel/core": "^7.26.10",
+    "@babel/preset-env": "^7.26.9",
+    "babel-loader": "^10.0.0",
     "webpack": "^5.98.0",
     "webpack-cli": "^6.0.1",
-    "webpack-dev-server": "^4.10.0"
+    "webpack-dev-server": "^5.2.0"
   }
 }

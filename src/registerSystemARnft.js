@@ -2,7 +2,7 @@ import 'aframe';
 import ARNFT from '@webarkit/ar-nft'
 const {ARnft} = ARNFT;
 import {cameraViewRenderer} from './cameraViewRenderer'
-import {setMatrix} from './utils'
+//import {setMatrix} from './utils'
 
 AFRAME.registerSystem('arnft', {
     container: null,

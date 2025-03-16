@@ -1,8 +1,7 @@
 const path = require('path');
+
 module.exports = {
-  //mode: 'development',
   entry: path.join(__dirname, 'src', 'index'),
-  //watch: true,
   output: {
     path: path.join(__dirname, 'dist'),
     publicPath: '/dist/',
@@ -11,10 +10,8 @@ module.exports = {
   },
   module: {
     rules: [{
-      test: /.jsx?$/,
-     include: [
-        path.resolve(__dirname, 'src'),
-      ],
+      test: /\.js?$/,
+      include: path.resolve(__dirname, 'src'),
       exclude: /node_modules/,
       loader: 'babel-loader',
       options: {
@@ -33,8 +30,7 @@ module.exports = {
   },
   devtool: 'source-map',
   devServer: {
-    contentBase: path.join(__dirname, '/dist/'),
-    inline: true,
+    static: path.join(__dirname, 'dist'),
     host: 'localhost',
     port: 8080,
   }
