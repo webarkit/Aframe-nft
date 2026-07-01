@@ -1,170 +1,122 @@
 import 'aframe';
-import ARNFT from '@webarkit/ar-nft'
-const {ARnft} = ARNFT;
-import {cameraViewRenderer} from './cameraViewRenderer'
-//import {setMatrix} from './utils'
+import ARNFT from '@webarkit/ar-nft';
+const { ARnft } = ARNFT;
+import { cameraViewRenderer } from './cameraViewRenderer';
+import { computeCenterOffset, toMatrixElements } from './nftMath';
 
 AFRAME.registerSystem('arnft', {
-    container: null,
-    video: null,
     schema: {
-        // Define schema of system here
-        videoWidth: {
-            type: 'number',
-            default: 640
-        },
-        videoHeight: {
-            type: 'number',
-            default: 480
-        },
+        videoWidth: { type: 'number', default: 640 },
+        videoHeight: { type: 'number', default: 480 },
+        configUrl: { type: 'string', default: './config.json' },
     },
     init: function () {
         console.info('arnft system init');
-        this.arNFT = new ARnft(this.data.videoWidth, this.data.videoHeight, './config.json');
+        this.arNFT = new ARnft(this.data.videoWidth, this.data.videoHeight, this.data.configUrl);
         this.uuid = this.arNFT.uuid;
-        this.video = document.getElementById("video");
+        this.video = document.getElementById('video');
         this.camV = new cameraViewRenderer(this.video);
-    }
+    },
 });
 
 AFRAME.registerComponent('nft-anchor', {
     dependencies: ['arnft'],
     schema: {
-        // Define schema of component here
-        entityName: {
-            type: 'string',
-            default: 'pinball',
-        },
-        markerUrl: {
-            type: 'string',
-            default: 'examples/dataNFT/pinball'
-
-        }
+        entityName: { type: 'string', default: 'pinball' },
+        markerUrl: { type: 'string', default: 'examples/dataNFT/pinball' },
+        // Uniform scale applied to the mesh geometry. NFT pose units are millimetres,
+        // so a bare 1-unit primitive is tiny; this makes it visible without changing
+        // the (now correctly centered) placement offset.
+        scaleFactor: { type: 'number', default: 200 },
     },
+
+    init: function () {
+        this.container = this.el.sceneEl.parentNode;
+        this.sysNft = this.el.sceneEl.systems.arnft;
+        this.mesh = this.el.object3D;
+
+        // Post-matrix that recenters the mesh on the marker origin. Composed once
+        // the NFT metadata (size + dpi) arrives.
+        this.postMatrix = new AFRAME.THREE.Matrix4();
+        // Latest pose from the tracker, applied every tick. null until first hit.
+        this.latestMatrix = null;
+
+        this.sysNft.arNFT.initializeRaw(
+            [[this.data.markerUrl]],
+            [[this.data.entityName]],
+            this.sysNft.camV,
+            true,
+        );
+
+        // Bind all listeners ONCE here — never in tick() (that leaked a listener
+        // per frame and ran the handler N times per frame). See DESIGN.md finding #2.
+        const eventSuffix = this.sysNft.uuid + '-' + this.data.entityName;
+
+        window.addEventListener('getProjectionMatrix', (ev) => {
+            this.setupCamera(ev.detail.proj);
+        });
+
+        window.addEventListener('getNFTData-' + eventSuffix, (ev) => {
+            const msg = ev.detail;
+            // Center the mesh using the marker's real-world size (dpi-scaled mm),
+            // NOT raw pixels — this is the mesh-shift fix. See DESIGN.md finding #1.
+            const offset = computeCenterOffset(msg.width, msg.height, msg.dpi);
+            const position = new AFRAME.THREE.Vector3(offset.x, offset.y, offset.z);
+            const quaternion = new AFRAME.THREE.Quaternion();
+            const s = this.data.scaleFactor;
+            const scale = new AFRAME.THREE.Vector3(s, s, s);
+            this.postMatrix.compose(position, quaternion, scale);
+        });
+
+        window.addEventListener('getMatrixGL_RH-' + eventSuffix, (ev) => {
+            const elements = toMatrixElements(ev.detail.matrixGL_RH);
+            if (elements === null) {
+                console.error('Invalid matrixGL_RH data:', ev.detail.matrixGL_RH);
+                return;
+            }
+            const m = new AFRAME.THREE.Matrix4();
+            m.elements = elements;
+            m.multiply(this.postMatrix);
+            this.latestMatrix = m;
+            this.mesh.visible = true;
+        });
+
+        window.addEventListener('nftTrackingLost-' + eventSuffix, () => {
+            this.mesh.visible = false;
+        });
+    },
+
     setupCamera: function (proj) {
-        const video = this.video;
         const container = this.container;
-        let vw, vh; // display css width, height
-        const videoRatio = video.videoWidth / video.videoHeight;
-        const containerRatio = container.clientWidth / container.clientHeight;
-        if (videoRatio > containerRatio) {
-            vh = container.clientHeight;
-            vw = vh * videoRatio;
-        } else {
-            vw = container.clientWidth;
-            vh = vw / videoRatio;
-        }
-        const fov = 2 * Math.atan(1/proj[5] / vh * container.clientHeight ) * 180 / Math.PI; // vertical fov
+        const fov = (2 * Math.atan(1 / proj[5]) * 180) / Math.PI; // vertical fov
         const near = proj[14] / (proj[10] - 1.0);
         const far = proj[14] / (proj[10] + 1.0);
-        const ratio = proj[5] / proj[0]; // (r-l) / (t-b)
-        //console.log("loaded proj: ", proj, ". fov: ", fov, ". near: ", near, ". far: ", far, ". ratio: ", ratio);
-        const newAspect = container.clientWidth / container.clientHeight;
-        const cameraEle = container.getElementsByTagName("a-camera")[0];
+        const aspect = container.clientWidth / container.clientHeight;
+
+        const cameraEle = container.getElementsByTagName('a-camera')[0];
         const camera = cameraEle.getObject3D('camera');
         camera.fov = fov;
-        camera.aspect = newAspect;
+        camera.aspect = aspect;
         camera.near = near;
         camera.far = far;
         camera.updateProjectionMatrix();
-        //const newCam = new AFRAME.THREE.PerspectiveCamera(fov, newRatio, near, far);
-        //camera.getObject3D('camera').projectionMatrix = newCam.projectionMatrix;
-
-        /*this.video.style.top = (-(vh - container.clientHeight) / 2) + "px";
-        this.video.style.left = (-(vw - container.clientWidth) / 2) + "px";
-        this.video.style.width = vw + "px";
-        this.video.style.height = vh + "px";*/
-    },
-    init: function () {
-        this.container = this.el.sceneEl.parentNode;
-        console.log('a-nft component init');
-        //console.log(this.data);
-        //console.log(this.system);
-        this.sysNft = this.el.sceneEl.systems.arnft;
-        console.log('sysNft is: ', this.sysNft)
-        this.sysNft.arNFT.initializeRaw([[this.data.markerUrl]], [[this.data.entityName]], this.sysNft.camV, true)
-        //this.root = this.el.object3D;
-        const mesh = this.el.object3D;
-        console.log(this.root)
-        this.markerWidth=0;
-        this.markerHeight=0;
-        this.postMatrix = new AFRAME.THREE.Matrix4();
-        window.addEventListener("getProjectionMatrix", (ev) => {
-            this.el.setupCamera(ev.detail.proj)
-        });
-        window.addEventListener("getNFTData-" + this.sysNft.uuid + "-" + this.data.entityName, (ev) => {
-            console.log('msg from event: ', ev.detail)
-            const msg = ev.detail;
-            //mesh.position.y = ((msg.height / msg.dpi) * 2.54 * 10) / 2.0;
-            //mesh.position.x = ((msg.width / msg.dpi) * 2.54 * 10) / 2.0;
-            //mesh.position.y = 120;
-            //mesh.position.x = 120;
-            //mesh.position.z = 120;
-            const position = new AFRAME.THREE.Vector3();
-            const quaternion = new AFRAME.THREE.Quaternion();
-            const scale = new AFRAME.THREE.Vector3();
-            this.markerWidth = msg.width;
-            //this.markerWidth = 1;
-            this.markerHeight = msg.height;
-            const scaleFactor = 200;
-
-            //console.log('msg from event: ',  ((msg.height / msg.dpi) * 2.54 * 10) / 2.0)
-            //position.y = ((this.markerHeight / msg.dpi) * 2.54 * 10) / 2.0;
-            //position.x = ((this.markerWidth / msg.dpi) * 2.54 * 10) / 2.0;
-            position.x = this.markerWidth / 2;
-            position.y = this.markerWidth / 2 + (this.markerHeight - this.markerWidth) / 2;
-            scale.x = scaleFactor;
-            scale.y = scaleFactor;
-            scale.z = scaleFactor;
-            this.postMatrix.compose(position, quaternion, scale);
-            console.log(this.postMatrix)
-        });
     },
 
     tick: function () {
-        const mesh = this.el.object3D;
-        window.addEventListener("getMatrixGL_RH-" + this.sysNft.uuid + "-" + this.data.entityName, (ev) => {
-            mesh.visible = true;
-            mesh.matrixAutoUpdate = false;
-
-            const m = new AFRAME.THREE.Matrix4();
-            const matrixGL_RH = ev.detail.matrixGL_RH;
-
-            //console.log('matrixGL_RH: ', matrixGL_RH);
-
-            // Ensure matrixGL_RH is an array and contains valid numbers
-            if (Array.isArray(matrixGL_RH) && matrixGL_RH.length === 16) {
-                m.elements = matrixGL_RH.map(value => Number(value));
-            } else if (typeof matrixGL_RH === 'object' && matrixGL_RH !== null) {
-                m.elements = [
-                    Number(matrixGL_RH[0]), Number(matrixGL_RH[1]), Number(matrixGL_RH[2]), Number(matrixGL_RH[3]),
-                    Number(matrixGL_RH[4]), Number(matrixGL_RH[5]), Number(matrixGL_RH[6]), Number(matrixGL_RH[7]),
-                    Number(matrixGL_RH[8]), Number(matrixGL_RH[9]), Number(matrixGL_RH[10]), Number(matrixGL_RH[11]),
-                    Number(matrixGL_RH[12]), Number(matrixGL_RH[13]), Number(matrixGL_RH[14]), Number(matrixGL_RH[15])
-                ];
-            } else {
-                console.error('Invalid matrixGL_RH data:', matrixGL_RH);
-                return;
-            }
-
-            //console.log('m.elements: ', m.elements);
-            m.multiply(this.postMatrix);
-            mesh.matrix = m;
-        });
-        window.addEventListener("nftTrackingLost-" + this.sysNft.uuid + "-" + this.data.entityName, (ev) => {
-            //this.root.visible = false;
-            mesh.visible = false;
-        });
-
-    }
+        if (this.latestMatrix === null) {
+            return;
+        }
+        this.mesh.matrixAutoUpdate = false;
+        this.mesh.matrix.copy(this.latestMatrix);
+    },
 });
 
 AFRAME.registerPrimitive('a-nft', AFRAME.utils.extendDeep({}, AFRAME.primitives.getMeshMixin(), {
     defaultComponents: {
-        'nft-anchor': {}
+        'nft-anchor': {},
     },
     mappings: {
         url: 'nft-anchor.markerUrl',
         name: 'nft-anchor.entityName',
-    }
-}),)
+    },
+}));

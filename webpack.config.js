@@ -30,8 +30,11 @@ module.exports = {
   },
   devtool: 'source-map',
   devServer: {
-    static: path.join(__dirname, 'dist'),
+    // Serve the whole project so examples/ (HTML, config.json, DataNFT) load
+    // alongside the bundle at /dist/.
+    static: path.join(__dirname),
     host: 'localhost',
     port: 8080,
+    open: ['/examples/basic.html'],
   }
 };

@@ -1,5 +1,5 @@
 {
-  "addPath": "Aframe-nft",
+  "addPath": "",
   "cameraPara": "./examples/Data/camera_para.dat",
   "container": {
     "create": false,

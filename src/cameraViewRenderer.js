@@ -5,6 +5,8 @@ export class cameraViewRenderer {
         this._video = video;
         this._frame = 0;
         this.lastCache = 0;
+        // Default so the getImage() frame-rate gate never divides by undefined (NaN).
+        this.targetFrameRate = 60;
     }
 
     async initialize(videoSettings) {
