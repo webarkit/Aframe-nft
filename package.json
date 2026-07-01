@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "description": "aframe with ARnft",
   "main": "dist/AframeNft.js",
+  "type": "module",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "webpack --mode=production",
-    "build:dev": "webpack --mode=development --progress --watch",
-    "start": "webpack-dev-server"
+    "build": "vite build",
+    "dev": "vite",
+    "start": "vite",
+    "preview": "vite preview"
   },
   "repository": {
     "type": "git",
@@ -29,13 +31,8 @@
     "aframe": "1.7.1"
   },
   "devDependencies": {
-    "@babel/core": "7.28.5",
-    "@babel/preset-env": "7.28.5",
-    "babel-loader": "^10.0.0",
     "jsdom": "^25.0.1",
-    "vitest": "^3.2.6",
-    "webpack": "5.102.1",
-    "webpack-cli": "^6.0.1",
-    "webpack-dev-server": "5.2.2"
+    "vite": "^6.0.0",
+    "vitest": "^3.2.6"
   }
 }

@@ -111,6 +111,8 @@ consistently with `scaleFactor`.
 | Offset from real-world marker size, mesh centered | Pixel-based offset (current) | Fixes mesh-shift (finding #1). |
 | Tests are first-class | Manual-only | User confirmed tests should be set up. |
 | Single marker scope | Multi-marker | YAGNI for now; keeps both phases small. |
+| Phase 2 branches from the arnft branch (not main) | Branch from near-empty `main` | `main` has only LICENSE/README; branching from `feat-regular-arnft` keeps the working example, NFT assets, tests, and Phase 1 fixes as a baseline. |
+| Vite replaces webpack (Phase 2) | Keep webpack; Rollup direct | Faster dev/HMR, native ESM, one config shared with Vitest, fewer deps. Example loads `../src/index.js` as a module in dev; `vite build` still emits `dist/AframeNft.js` (IIFE global). |
 
 ## 9. Implementation Sequencing
 
