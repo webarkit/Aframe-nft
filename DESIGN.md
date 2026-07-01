@@ -125,12 +125,32 @@ consistently with `scaleFactor`.
 5. Guard `targetFrameRate`; make config path a schema attr — findings #6, #8.
 6. Run tests + manual verify against `pinball`.
 
-**Phase 2 (branch `feat-jsartoolkit-nft`):**
-1. Add jsartoolkitNFT dependency + NFT worker loader.
-2. Reimplement `arnft` system to own worker + emit single `nft-pose` event.
-3. Reimplement `nft-anchor` to consume pose (optional smoothing/confidence).
-4. Port tests; manual verify; document migration.
+**Phase 2 (branch `feat-jsartoolkit-nft`) — IMPLEMENTED:**
+1. ✅ Replaced `@webarkit/ar-nft` with `@webarkit/jsartoolkit-nft` (1.10.1); replaced
+   webpack with Vite (dev server + IIFE lib build).
+2. ✅ `arnft` system owns the camera + `ARControllerNFT` (main thread) and runs the
+   per-frame `process()` loop; components register markers and receive pose callbacks.
+3. ✅ `nft-anchor` consumes the pose, centers via `nftMath.computeCenterOffset`, lifts
+   the mesh onto the plane, applies scale.
+4. ✅ Camera alignment mirrors AR.js `ArToolkitSource`: video + WebGL canvas are sized
+   to the same "cover" box (source aspect) so the overlay registers with the video for
+   **any** `camera_para` — no per-device nudge. Uses `<a-scene embedded>`.
+5. ✅ Tests still green (nftMath). Verified live against `pinball`.
 
-## 10. Open Questions
+Decisions made during Phase 2 (see also Decision Log):
+- Main thread instead of the worker (Approach A) — single marker performs fine; worker
+  deferred as a future optimization.
+- Centering formula matches the canonical jsartoolkitNFT threejs example verbatim
+  (`x = width/2 mm`, `y = height/2 mm`); proven camera-independent once the canvas is
+  sized like the video.
 
-- None blocking. Confidence-threshold default and smoothing default to be tuned empirically.
+## 10. Known Items / Future Work
+
+- **Cube "lean" (cosmetic, deferred):** the mesh rests on the marker (lifted by half its
+  height), so a tall mesh shows correct perspective parallax that can read as a shift when
+  viewed at an angle. Placement/rotation are correct. Options to revisit: shorter/flatter
+  demo mesh, make the lift optional, or don't auto-lift and let users position content.
+- **Smoothing (`OneEuroFilter`) not yet ported** — raw pose is used. Add an optional
+  `smoothing`/`confidence` attribute if jitter is a problem in practice.
+- Worker-based detection (Approach A) as a perf optimization.
+- Confidence-threshold and smoothing defaults to be tuned empirically.

@@ -27,7 +27,7 @@
   },
   "homepage": "https://github.com/webarkit/Aframe-nft#readme",
   "dependencies": {
-    "@webarkit/ar-nft": "0.14.12",
+    "@webarkit/jsartoolkit-nft": "1.10.1",
     "aframe": "1.7.1"
   },
   "devDependencies": {

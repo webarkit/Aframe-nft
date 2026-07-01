@@ -119,15 +119,13 @@ html {
     height: 100%;
 }
 
+/* Size/position of #video (and the A-Frame canvas) is set from JS in _resize()
+   to a "cover" box at the camera's source aspect, so do not force it here. */
 #video {
     position: absolute;
     top: 0;
     left: 0;
-
     display: block;
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: cover;
 }
 
 #canvas {
@@ -135,11 +133,7 @@ html {
     left: 0;
     top: 0;
     z-index: 100;
-
     display: block;
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: cover;
 }
 
 #arvideo {

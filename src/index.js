@@ -1,2 +1,1 @@
-import './registerSystemARnft';
-
+import './registerNFT';
