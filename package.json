@@ -1,0 +1,43 @@
+{
+  "name": "aframe-nft",
+  "version": "0.1.0",
+  "description": "A-Frame NFT (Natural Feature Tracking) AR components powered by jsartoolkitNFT",
+  "main": "dist/AframeNft.js",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "vite build",
+    "dev": "vite",
+    "start": "vite",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/webarkit/Aframe-nft.git"
+  },
+  "keywords": [
+    "aframe",
+    "webar",
+    "augmented-reality",
+    "nft",
+    "natural-feature-tracking",
+    "jsartoolkit",
+    "jsartoolkitNFT"
+  ],
+  "author": "@kalwalt",
+  "license": "LGPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/webarkit/Aframe-nft/issues"
+  },
+  "homepage": "https://github.com/webarkit/Aframe-nft#readme",
+  "dependencies": {
+    "@webarkit/jsartoolkit-nft": "1.10.1",
+    "aframe": "1.7.1"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.1",
+    "vite": "^6.0.0",
+    "vitest": "^3.2.6"
+  }
+}
