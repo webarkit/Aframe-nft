@@ -72,7 +72,8 @@ video.
 ```
 
 `url` points at the descriptor set **without** file extension (jsartoolkitNFT appends
-`.fset` / `.fset3` / `.iset`). Paths are resolved relative to the site origin.
+`.fset` / `.fset3` / `.iset`). Relative `url` / `cameraParam` paths resolve relative to the
+HTML page, like any other asset URL.
 
 ## API reference 📖
 

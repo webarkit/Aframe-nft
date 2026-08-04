@@ -21,7 +21,8 @@ export class cameraViewRenderer {
                     audio: false,
                     video: {
                         facingMode: this._facing,
-                        width: { min: 480, max: 640 },
+                        width: videoSettings.width ? { ideal: videoSettings.width } : { min: 480, max: 640 },
+                        height: videoSettings.height ? { ideal: videoSettings.height } : undefined,
                     },
                 };
                 if (navigator.mediaDevices.enumerateDevices) {
@@ -39,7 +40,14 @@ export class cameraViewRenderer {
                 }
                 this._video.srcObject = await navigator.mediaDevices.getUserMedia(hint);
                 this._video = await new Promise((resolve, reject) => {
+                    // Metadata may already be available (reused element); don't wait forever.
+                    if (this._video.readyState >= 1 /* HAVE_METADATA */) {
+                        resolve(this._video);
+                        return;
+                    }
                     this._video.onloadedmetadata = () => resolve(this._video);
+                    this._video.onerror = () =>
+                        reject(new Error('video element failed to load the camera stream'));
                 });
                 this.prepareImage();
                 return true;

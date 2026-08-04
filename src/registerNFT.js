@@ -3,13 +3,11 @@ import { ARControllerNFT } from '@webarkit/jsartoolkit-nft';
 import { cameraViewRenderer } from './cameraViewRenderer';
 import { computeCenterOffset, toMatrixElements } from './nftMath';
 
-// Resolve a marker/camera path against the site origin so relative paths like
-// "examples/DataNFT/pinball" work regardless of the page's own URL.
+// Resolve a marker/camera path relative to the HTML page (like any other asset
+// URL), so relative paths keep working under sub-path deployments. Absolute and
+// root-relative URLs pass through unchanged.
 function resolveUrl(path) {
-    if (/^https?:\/\//i.test(path)) {
-        return path;
-    }
-    return new URL(path.replace(/^\//, ''), window.location.origin + '/').href;
+    return new URL(path, document.baseURI).href;
 }
 
 // The `arnft` system owns the camera, the jsartoolkitNFT tracker, and the
@@ -19,7 +17,7 @@ AFRAME.registerSystem('arnft', {
     schema: {
         videoWidth: { type: 'number', default: 640 },
         videoHeight: { type: 'number', default: 480 },
-        cameraParam: { type: 'string', default: 'examples/Data/camera_para.dat' },
+        cameraParam: { type: 'string', default: 'Data/camera_para.dat' },
     },
 
     init: function () {
@@ -33,7 +31,12 @@ AFRAME.registerSystem('arnft', {
         this.markersById = new Map();
 
         this.camV
-            .initialize({ facingMode: 'environment', targetFrameRate: 60 })
+            .initialize({
+                facingMode: 'environment',
+                targetFrameRate: 60,
+                width: this.data.videoWidth,
+                height: this.data.videoHeight,
+            })
             .then(() => {
                 this.videoReady = true;
                 this._maybeStart();
@@ -57,7 +60,11 @@ AFRAME.registerSystem('arnft', {
         const cameraParamUrl = resolveUrl(this.data.cameraParam);
         ARControllerNFT.initWithDimensions(this.camV.pw, this.camV.ph, cameraParamUrl, true)
             .then((ar) => this._onControllerReady(ar))
-            .catch((err) => console.error('arnft: tracker init failed', err));
+            .catch((err) => {
+                // Allow a later _maybeStart() to retry instead of blocking forever.
+                this.starting = false;
+                console.error('arnft: tracker init failed', err);
+            });
     },
 
     _onControllerReady: function (ar) {
@@ -169,6 +176,14 @@ AFRAME.registerSystem('arnft', {
             marginTop = -(boxH - screenH) / 2;
         }
 
+        // Skip the DOM/renderer work when the box hasn't changed (this runs every
+        // frame). setSize reallocates the WebGL buffer, so only touch it on change.
+        const last = this._lastBox;
+        if (last && last.w === boxW && last.h === boxH && last.ml === marginLeft && last.mt === marginTop) {
+            return;
+        }
+        this._lastBox = { w: boxW, h: boxH, ml: marginLeft, mt: marginTop };
+
         const apply = (el) => {
             el.style.position = 'absolute';
             el.style.top = '0';
@@ -202,7 +217,7 @@ AFRAME.registerComponent('nft-anchor', {
     dependencies: ['arnft'],
     schema: {
         entityName: { type: 'string', default: 'pinball' },
-        markerUrl: { type: 'string', default: 'examples/DataNFT/pinball' },
+        markerUrl: { type: 'string', default: 'DataNFT/pinball' },
         // Uniform scale for the mesh geometry (pose units are millimetres, so a
         // bare 1-unit primitive is tiny). Does not affect the centering offset.
         scaleFactor: { type: 'number', default: 150 },
