@@ -83,19 +83,23 @@ HTML page, like any other asset URL.
 |-----------|------|---------|-------------|
 | `videoWidth` | number | `640` | Requested capture width |
 | `videoHeight` | number | `480` | Requested capture height |
-| `cameraParam` | string | `examples/Data/camera_para.dat` | ARToolKit camera parameter file |
+| `cameraParam` | string | `Data/camera_para.dat` | ARToolKit camera parameter file |
 
 ### `<a-nft>` primitive (`nft-anchor` component)
 
 | Attribute | Maps to | Type | Default | Description |
 |-----------|---------|------|---------|-------------|
-| `url` | `markerUrl` | string | `examples/DataNFT/pinball` | NFT descriptor set (no extension) |
+| `url` | `markerUrl` | string | `DataNFT/pinball` | NFT descriptor set (no extension) |
 | `name` | `entityName` | string | `pinball` | Label for the marker |
 | `nft-anchor="scaleFactor: …"` | `scaleFactor` | number | `150` | Uniform mesh scale (pose units are mm) |
 | `nft-anchor="offsetX: …"` | `offsetX` | number | `0` | Fine X nudge in marker mm (usually unneeded) |
 | `nft-anchor="offsetY: …"` | `offsetY` | number | `0` | Fine Y nudge in marker mm (usually unneeded) |
+| `nft-anchor="smooth: …"` | `smooth` | boolean | `true` | Enable 1€ pose smoothing (reduces jitter) |
+| `nft-anchor="smoothMinCutoff: …"` | `smoothMinCutoff` | number | `0.0001` | Baseline smoothing — lower is smoother but laggier |
+| `nft-anchor="smoothBeta: …"` | `smoothBeta` | number | `0.01` | Speed coefficient — higher reduces lag while moving |
 
 The mesh is centered on the marker and lifted to rest on its surface automatically.
+Pose smoothing is on by default; set `smooth: false` to compare the raw pose.
 
 ## How it works 🔍
 

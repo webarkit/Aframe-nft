@@ -2,6 +2,7 @@ import 'aframe';
 import { ARControllerNFT } from '@webarkit/jsartoolkit-nft';
 import { cameraViewRenderer } from './cameraViewRenderer';
 import { computeCenterOffset, toMatrixElements } from './nftMath';
+import { OneEuroFilter } from './oneEuroFilter';
 
 // Resolve a marker/camera path relative to the HTML page (like any other asset
 // URL), so relative paths keep working under sub-path deployments. Absolute and
@@ -226,6 +227,11 @@ AFRAME.registerComponent('nft-anchor', {
         // camera calibration (principal point) on a specific device.
         offsetX: { type: 'number', default: 0 },
         offsetY: { type: 'number', default: 0 },
+        // Pose smoothing (1€ filter) to reduce tracking jitter. Lower minCutoff =
+        // smoother but more lag; higher beta = less lag while moving.
+        smooth: { type: 'boolean', default: true },
+        smoothMinCutoff: { type: 'number', default: 0.0001 },
+        smoothBeta: { type: 'number', default: 0.01 },
     },
 
     init: function () {
@@ -233,6 +239,7 @@ AFRAME.registerComponent('nft-anchor', {
         this.postMatrix = new AFRAME.THREE.Matrix4();
         this.latestMatrix = null;
         this.markerData = null;
+        this._buildFilter();
 
         const system = this.el.sceneEl.systems.arnft;
         system.registerMarker({
@@ -242,11 +249,22 @@ AFRAME.registerComponent('nft-anchor', {
         });
     },
 
-    // Recompose when a tunable (scaleFactor/offsetX/offsetY) changes at runtime.
+    // Recompose / rebuild when a tunable changes at runtime (scaleFactor, offsets,
+    // smoothing params).
     update: function () {
+        this._buildFilter();
         if (this.markerData) {
             this._composePostMatrix();
         }
+    },
+
+    _buildFilter: function () {
+        this.filter = this.data.smooth
+            ? new OneEuroFilter({
+                  minCutoff: this.data.smoothMinCutoff,
+                  beta: this.data.smoothBeta,
+              })
+            : null;
     },
 
     // Marker metadata (real-world size + dpi) arrived — compose the post-matrix.
@@ -274,10 +292,13 @@ AFRAME.registerComponent('nft-anchor', {
 
     // New pose for this marker: RH matrix -> centered model matrix, cached for tick.
     onPose: function (matrixGL_RH) {
-        const elements = toMatrixElements(matrixGL_RH);
+        let elements = toMatrixElements(matrixGL_RH);
         if (elements === null) {
             console.error('nft-anchor: invalid matrixGL_RH', matrixGL_RH);
             return;
+        }
+        if (this.filter) {
+            elements = this.filter.filter(performance.now(), elements);
         }
         const m = new AFRAME.THREE.Matrix4();
         m.elements = elements;
@@ -288,6 +309,10 @@ AFRAME.registerComponent('nft-anchor', {
 
     onLost: function () {
         this.mesh.visible = false;
+        // Start fresh on re-acquisition so the mesh doesn't ease in from a stale pose.
+        if (this.filter) {
+            this.filter.reset();
+        }
     },
 
     tick: function () {
