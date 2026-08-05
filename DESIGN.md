@@ -150,7 +150,10 @@ Decisions made during Phase 2 (see also Decision Log):
   height), so a tall mesh shows correct perspective parallax that can read as a shift when
   viewed at an angle. Placement/rotation are correct. Options to revisit: shorter/flatter
   demo mesh, make the lift optional, or don't auto-lift and let users position content.
-- **Smoothing (`OneEuroFilter`) not yet ported** — raw pose is used. Add an optional
-  `smoothing`/`confidence` attribute if jitter is a problem in practice.
+- ✅ **Pose smoothing (`OneEuroFilter`) — done.** Optional 1€ filter on the pose matrix,
+  exposed via `smooth` / `smoothMinCutoff` / `smoothBeta` on `nft-anchor` (on by default).
+  Implemented as a tested module (`src/oneEuroFilter.js`).
 - Worker-based detection (Approach A) as a perf optimization.
-- Confidence-threshold and smoothing defaults to be tuned empirically.
+- Optional tracking-confidence threshold (not yet implemented).
+- Deferred perf/robustness: `getImage()` per-call allocation; loading markers registered
+  after the tracker is ready.
