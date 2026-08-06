@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { pxToMm, computeCenterOffset, toMatrixElements } from '../src/nftMath.js';
+import {
+    pxToMm,
+    computeCenterOffset,
+    toMatrixElements,
+    computeLiftZ,
+} from '../src/nftMath.js';
 
 describe('pxToMm', () => {
     it('converts pixels to millimetres via dpi', () => {
@@ -22,6 +27,22 @@ describe('computeCenterOffset (mesh-shift fix)', () => {
         // which is ~4x the correct millimetre offset for 72 dpi.
         const offset = computeCenterOffset(288, 216, 72);
         expect(offset.x).not.toBeCloseTo(144, 1);
+    });
+});
+
+describe('computeLiftZ', () => {
+    it('lifts a centered unit cube by half its scaled height (bottom on the plane)', () => {
+        // unit cube: bboxMinZ = -0.5, scaleFactor 150 -> lift 75
+        expect(computeLiftZ(-0.5, 150, true)).toBe(75);
+    });
+
+    it('lifts an arbitrary mesh by its real scaled bottom extent', () => {
+        // a mesh whose bottom is at z = -0.2 in local space
+        expect(computeLiftZ(-0.2, 150, true)).toBeCloseTo(30, 6);
+    });
+
+    it('returns 0 when lift is disabled (mesh centered on the plane)', () => {
+        expect(computeLiftZ(-0.5, 150, false)).toBe(0);
     });
 });
 
