@@ -84,6 +84,8 @@ HTML page, like any other asset URL.
 | `videoWidth` | number | `640` | Requested capture width |
 | `videoHeight` | number | `480` | Requested capture height |
 | `cameraParam` | string | `Data/camera_para.dat` | ARToolKit camera parameter file |
+| `principalOffsetX` | number | `0` | Principal-point (cx) correction in NDC — see note below |
+| `principalOffsetY` | number | `0` | Principal-point (cy) correction in NDC — see note below |
 
 ### `<a-nft>` primitive (`nft-anchor` component)
 
@@ -92,6 +94,7 @@ HTML page, like any other asset URL.
 | `url` | `markerUrl` | string | `DataNFT/pinball` | NFT descriptor set (no extension) |
 | `name` | `entityName` | string | `pinball` | Label for the marker |
 | `nft-anchor="scaleFactor: …"` | `scaleFactor` | number | `150` | Uniform mesh scale (pose units are mm) |
+| `nft-anchor="lift: …"` | `lift` | boolean | `true` | Lift the mesh to rest ON the marker (`false` centers it on the plane) |
 | `nft-anchor="offsetX: …"` | `offsetX` | number | `0` | Fine X nudge in marker mm (usually unneeded) |
 | `nft-anchor="offsetY: …"` | `offsetY` | number | `0` | Fine Y nudge in marker mm (usually unneeded) |
 | `nft-anchor="smooth: …"` | `smooth` | boolean | `true` | Enable 1€ pose smoothing (reduces jitter) |
@@ -100,6 +103,16 @@ HTML page, like any other asset URL.
 
 The mesh is centered on the marker and lifted to rest on its surface automatically.
 Pose smoothing is on by default; set `smooth: false` to compare the raw pose.
+
+### Camera calibration & the overlay shift
+
+`camera_para.dat` is a **generic** calibration. If it doesn't match your webcam's true
+optical center, the whole overlay is shifted by a constant amount (a depth-independent
+horizontal/vertical offset — the camera's principal point). The proper fix is to generate a
+`camera_para.dat` calibrated for your camera and point `cameraParam` at it. As an interim
+workaround, nudge the principal point via `principalOffsetX` / `principalOffsetY` (NDC units,
+default `0`), e.g. `arnft="principalOffsetX: 0.06"`. These values are **camera-specific**, so
+the shipped default is `0`.
 
 ## How it works 🔍
 

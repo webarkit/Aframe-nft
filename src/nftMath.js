@@ -22,6 +22,16 @@ export function computeCenterOffset(markerWidthPx, markerHeightPx, dpi) {
     };
 }
 
+// Z translation (along the marker normal) that seats a mesh on the plane.
+//
+// The mesh is scaled by `scaleFactor`, so its scaled bottom sits at
+// `scaleFactor * bboxMinZ`. When `lift` is true, we move that bottom to z=0 so
+// the mesh rests ON the marker; when false, the mesh origin stays on the plane
+// (centered), which avoids the parallax "lean" of a tall standing mesh.
+export function computeLiftZ(bboxMinZ, scaleFactor, lift) {
+    return lift ? -scaleFactor * bboxMinZ : 0;
+}
+
 // Normalize the matrixGL_RH payload (array-like or object) into a plain
 // 16-number array. Returns null when the input is not a valid 4x4 matrix.
 export function toMatrixElements(matrixGL_RH) {

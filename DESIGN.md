@@ -146,10 +146,16 @@ Decisions made during Phase 2 (see also Decision Log):
 
 ## 10. Known Items / Future Work
 
-- **Cube "lean" (cosmetic, deferred):** the mesh rests on the marker (lifted by half its
-  height), so a tall mesh shows correct perspective parallax that can read as a shift when
-  viewed at an angle. Placement/rotation are correct. Options to revisit: shorter/flatter
-  demo mesh, make the lift optional, or don't auto-lift and let users position content.
+- ✅ **Mesh lift — now correct + optional.** The mesh is lifted by its real bounding-box
+  height (works for any mesh, not just a unit cube) via `computeLiftZ`; a `lift` attribute
+  (default true) can disable it to center the mesh on the plane. Any residual "lean" on a
+  tall mesh is correct perspective parallax.
+- ⚠️ **Constant overlay shift = camera calibration (interim knob).** The generic
+  `camera_para.dat`'s principal point (`proj[8]`/`proj[9]`) doesn't match a given webcam, so
+  the overlay is shifted by a constant, depth-independent amount (confirmed: unchanged across
+  640×480 vs 1280×720, and controlled entirely by `proj[8]`). The proper fix is a
+  camera-specific `camera_para`; interim workaround is the `principalOffsetX`/`principalOffsetY`
+  knobs on the `arnft` system (default 0). Shipped example stays at 0 (value is per-camera).
 - ✅ **Pose smoothing (`OneEuroFilter`) — done.** Optional 1€ filter on the pose matrix,
   exposed via `smooth` / `smoothMinCutoff` / `smoothBeta` on `nft-anchor` (on by default).
   Implemented as a tested module (`src/oneEuroFilter.js`).

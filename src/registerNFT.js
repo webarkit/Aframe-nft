@@ -1,7 +1,7 @@
 import 'aframe';
 import { ARControllerNFT } from '@webarkit/jsartoolkit-nft';
 import { cameraViewRenderer } from './cameraViewRenderer';
-import { computeCenterOffset, toMatrixElements } from './nftMath';
+import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
 import { OneEuroFilter } from './oneEuroFilter';
 
 // Resolve a marker/camera path relative to the HTML page (like any other asset
@@ -19,6 +19,12 @@ AFRAME.registerSystem('arnft', {
         videoWidth: { type: 'number', default: 640 },
         videoHeight: { type: 'number', default: 480 },
         cameraParam: { type: 'string', default: 'Data/camera_para.dat' },
+        // Principal-point correction (NDC), added to the projection's cx/cy. Use
+        // this to compensate a generic camera_para that doesn't match the actual
+        // webcam optics (shows up as a constant overlay shift). Default 0 — the
+        // proper fix is a camera_para calibrated for your camera.
+        principalOffsetX: { type: 'number', default: 0 },
+        principalOffsetY: { type: 'number', default: 0 },
     },
 
     init: function () {
@@ -139,7 +145,18 @@ AFRAME.registerSystem('arnft', {
 
     _applyProjection: function () {
         const camera = this.arCamera;
-        camera.projectionMatrix.fromArray(this.projArray);
+        const px = this.data.principalOffsetX;
+        const py = this.data.principalOffsetY;
+        if (px || py) {
+            // Nudge the principal point (proj[8]=cx, proj[9]=cy) without mutating
+            // the stored base projection.
+            const proj = this.projArray.slice();
+            proj[8] += px;
+            proj[9] += py;
+            camera.projectionMatrix.fromArray(proj);
+        } else {
+            camera.projectionMatrix.fromArray(this.projArray);
+        }
         camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
     },
 
@@ -222,6 +239,9 @@ AFRAME.registerComponent('nft-anchor', {
         // Uniform scale for the mesh geometry (pose units are millimetres, so a
         // bare 1-unit primitive is tiny). Does not affect the centering offset.
         scaleFactor: { type: 'number', default: 150 },
+        // When true, the mesh is lifted so it rests ON the marker plane; when
+        // false, its origin sits on the plane (no standing-mesh parallax lean).
+        lift: { type: 'boolean', default: true },
         // Optional fine-alignment nudge in marker millimetres, added on top of the
         // (canonical) centering offset. Defaults to 0 — use it to compensate for
         // camera calibration (principal point) on a specific device.
@@ -277,17 +297,54 @@ AFRAME.registerComponent('nft-anchor', {
         const data = this.markerData;
         const offset = computeCenterOffset(data.width, data.height, data.dpi);
         const s = this.data.scaleFactor;
-        // Lift the mesh along the marker normal by half its scaled depth so it
-        // rests ON the marker plane instead of being half-buried in it. The scaled
-        // unit mesh spans `s`, so half-depth is s/2 (translation is unscaled).
+        // Lift along the marker normal by the mesh's real (unscaled) bottom extent
+        // so ANY mesh rests on the plane — not just a unit cube. Falls back to a
+        // unit-cube bottom (-0.5) if the mesh isn't measurable yet.
+        const bbox = this._getLocalBBox();
+        const bottomZ = bbox ? bbox.min.z : -0.5;
         const position = new AFRAME.THREE.Vector3(
             offset.x + this.data.offsetX,
             offset.y + this.data.offsetY,
-            offset.z + s / 2,
+            offset.z + computeLiftZ(bottomZ, s, this.data.lift),
         );
         const quaternion = new AFRAME.THREE.Quaternion();
         const scale = new AFRAME.THREE.Vector3(s, s, s);
         this.postMatrix.compose(position, quaternion, scale);
+    },
+
+    // Bounding box of the child mesh(es) expressed in this anchor's local frame
+    // (i.e. before the postMatrix scale is applied). Returns null if no geometry
+    // has loaded yet.
+    _getLocalBBox: function () {
+        const anchor = this.el.object3D;
+        const box = new AFRAME.THREE.Box3();
+        const tmp = new AFRAME.THREE.Box3();
+        const rel = new AFRAME.THREE.Matrix4();
+        let found = false;
+        anchor.traverse((node) => {
+            if (node === anchor || !node.geometry) {
+                return;
+            }
+            if (!node.geometry.boundingBox) {
+                node.geometry.computeBoundingBox();
+            }
+            // Accumulate local matrices from node up to (but excluding) the anchor.
+            rel.identity();
+            let cur = node;
+            while (cur && cur !== anchor) {
+                cur.updateMatrix();
+                rel.premultiply(cur.matrix);
+                cur = cur.parent;
+            }
+            tmp.copy(node.geometry.boundingBox).applyMatrix4(rel);
+            if (!found) {
+                box.copy(tmp);
+                found = true;
+            } else {
+                box.union(tmp);
+            }
+        });
+        return found ? box : null;
     },
 
     // New pose for this marker: RH matrix -> centered model matrix, cached for tick.
