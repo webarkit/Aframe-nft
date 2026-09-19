@@ -84,8 +84,6 @@ HTML page, like any other asset URL.
 | `videoWidth` | number | `640` | Requested capture width |
 | `videoHeight` | number | `480` | Requested capture height |
 | `cameraParam` | string | `Data/camera_para.dat` | ARToolKit camera parameter file |
-| `principalOffsetX` | number | `0` | Principal-point (cx) correction in NDC — see note below |
-| `principalOffsetY` | number | `0` | Principal-point (cy) correction in NDC — see note below |
 
 ### `<a-nft>` primitive (`nft-anchor` component)
 
@@ -104,15 +102,33 @@ HTML page, like any other asset URL.
 The mesh is centered on the marker and lifted to rest on its surface automatically.
 Pose smoothing is on by default; set `smooth: false` to compare the raw pose.
 
-### Camera calibration & the overlay shift
+### ⚠️ Print your marker at 100% scale
 
-`camera_para.dat` is a **generic** calibration. If it doesn't match your webcam's true
-optical center, the whole overlay is shifted by a constant amount (a depth-independent
-horizontal/vertical offset — the camera's principal point). The proper fix is to generate a
-`camera_para.dat` calibrated for your camera and point `cameraParam` at it. As an interim
-workaround, nudge the principal point via `principalOffsetX` / `principalOffsetY` (NDC units,
-default `0`), e.g. `arnft="principalOffsetX: 0.06"`. These values are **camera-specific**, so
-the shipped default is `0`.
+**The most common cause of a misaligned overlay is a badly printed target**, not a code or
+calibration problem. The NFT descriptor encodes the marker's real-world size, and the tracker
+solves the pose against *those* dimensions. If the print is scaled — especially non-uniformly,
+which "Fit to Page" does — the pose is systematically wrong and the overlay drifts to one side
+(typically overshooting the right edge).
+
+For the bundled `pinball` target (893 × 1117 px @ 120 dpi) a correct print measures:
+
+| | expected |
+|---|---|
+| width | **189.0 mm** (`893 / 120 × 25.4`) |
+| height | **236.4 mm** (`1117 / 120 × 25.4`) |
+| aspect | **0.7995** |
+
+Check it with a ruler. If width and height are off by *different* ratios, the print is
+squashed — reprint at **100% / Actual Size**, with scaling and "Fit to Page" turned **off**.
+
+To rule printing out entirely, display the
+[source image](https://raw.githubusercontent.com/artoolkitx/artoolkit5/master/doc/Marker%20images/pinball.jpg)
+on a phone or monitor at 1:1 and point the camera at the screen. (Note the mesh will look
+oversized there, because a screen-displayed marker is physically much smaller than the
+189 mm the descriptor assumes — that's expected, not a misalignment.)
+
+See [webarkit/jsfeatNext#142](https://github.com/webarkit/jsfeatNext/issues/142), where this
+was diagnosed and confirmed for this exact target.
 
 ## How it works 🔍
 
