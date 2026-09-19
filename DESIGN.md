@@ -150,12 +150,19 @@ Decisions made during Phase 2 (see also Decision Log):
   height (works for any mesh, not just a unit cube) via `computeLiftZ`; a `lift` attribute
   (default true) can disable it to center the mesh on the plane. Any residual "lean" on a
   tall mesh is correct perspective parallax.
-- ⚠️ **Constant overlay shift = camera calibration (interim knob).** The generic
-  `camera_para.dat`'s principal point (`proj[8]`/`proj[9]`) doesn't match a given webcam, so
-  the overlay is shifted by a constant, depth-independent amount (confirmed: unchanged across
-  640×480 vs 1280×720, and controlled entirely by `proj[8]`). The proper fix is a
-  camera-specific `camera_para`; interim workaround is the `principalOffsetX`/`principalOffsetY`
-  knobs on the `arnft` system (default 0). Shipped example stays at 0 (value is per-camera).
+- ✅ **Constant overlay shift — RESOLVED: it was a mis-printed marker, not our code.**
+  The overlay drifted right by a constant amount. Ruled out, one at a time: parallax from the
+  mesh lift, CSS/layout offset (measured `dx = 0` between the video and canvas rects), canvas
+  and video sizing, capture resolution/FOV (identical at 640×480 and 1280×720), and the
+  camera's principal point. The actual cause was the **printed target**: an A4 "Fit to Page"
+  print squashes the aspect ratio, so the physical marker no longer matches the dimensions the
+  descriptor declares and the fitted pose overshoots one side. Confirmed by displaying the
+  source image on a screen at 1:1 — the overlay lands correctly. Same diagnosis as
+  [webarkit/jsfeatNext#142](https://github.com/webarkit/jsfeatNext/issues/142).
+  Documented in the README (print at 100%; `pinball` = 189.0 × 236.4 mm).
+  **Lesson:** a constant, direction-specific error that is immune to every camera-side change
+  points at the physical target, not the camera model. Principal-point "correction" knobs were
+  prototyped and removed — they only masked the mismatch.
 - ✅ **Pose smoothing (`OneEuroFilter`) — done.** Optional 1€ filter on the pose matrix,
   exposed via `smooth` / `smoothMinCutoff` / `smoothBeta` on `nft-anchor` (on by default).
   Implemented as a tested module (`src/oneEuroFilter.js`).

@@ -19,12 +19,6 @@ AFRAME.registerSystem('arnft', {
         videoWidth: { type: 'number', default: 640 },
         videoHeight: { type: 'number', default: 480 },
         cameraParam: { type: 'string', default: 'Data/camera_para.dat' },
-        // Principal-point correction (NDC), added to the projection's cx/cy. Use
-        // this to compensate a generic camera_para that doesn't match the actual
-        // webcam optics (shows up as a constant overlay shift). Default 0 — the
-        // proper fix is a camera_para calibrated for your camera.
-        principalOffsetX: { type: 'number', default: 0 },
-        principalOffsetY: { type: 'number', default: 0 },
     },
 
     init: function () {
@@ -145,18 +139,7 @@ AFRAME.registerSystem('arnft', {
 
     _applyProjection: function () {
         const camera = this.arCamera;
-        const px = this.data.principalOffsetX;
-        const py = this.data.principalOffsetY;
-        if (px || py) {
-            // Nudge the principal point (proj[8]=cx, proj[9]=cy) without mutating
-            // the stored base projection.
-            const proj = this.projArray.slice();
-            proj[8] += px;
-            proj[9] += py;
-            camera.projectionMatrix.fromArray(proj);
-        } else {
-            camera.projectionMatrix.fromArray(this.projArray);
-        }
+        camera.projectionMatrix.fromArray(this.projArray);
         camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
     },
 
