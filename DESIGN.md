@@ -166,6 +166,25 @@ Decisions made during Phase 2 (see also Decision Log):
 - ✅ **Pose smoothing (`OneEuroFilter`) — done.** Optional 1€ filter on the pose matrix,
   exposed via `smooth` / `smoothMinCutoff` / `smoothBeta` on `nft-anchor` (on by default).
   Implemented as a tested module (`src/oneEuroFilter.js`).
+- ✅ **Multi-marker — `<a-nft>` per target, visibility derived locally.** Several `<a-nft>`
+  elements each anchor their own target. Three upstream constraints shaped this:
+  - `lostNFTMarker` keeps found/lost state in shared scalars, so switching targets inside the
+    200 ms window strands the previous marker's lost event
+    ([jsartoolkitNFT#611](https://github.com/webarkit/jsartoolkitNFT/issues/611)). We
+    therefore **do not use it**: each pose stamps `lastSeen`, and `tick()` hides markers that
+    go stale (`lostTimeout`, default 200 ms). Correct for any number of markers, on any
+    version of the library.
+  - `addNFTMarkers` derives ids/pages/`surfaceSet` indices from its loop counter, so it is
+    **single-call** — a second call returns duplicate ids and corrupts markers already
+    tracked ([#612](https://github.com/webarkit/jsartoolkitNFT/issues/612)). All markers are
+    loaded in **one batch**; late-registered `<a-nft>` warns instead of failing silently.
+  - Only **one marker is tracked at a time**: `detectedPage` is a single scalar and KPM
+    matching is skipped while tracking
+    ([#613](https://github.com/webarkit/jsartoolkitNFT/issues/613) requests `maxTrack`).
+    Targets therefore alternate rather than appearing together — expected, not a defect here.
+
+  `MarkerRegistry` (tested, DOM-free) holds load state + per-marker visibility, so if #613
+  lands this works unchanged.
 - Worker-based detection (Approach A) as a perf optimization.
 - Optional tracking-confidence threshold (not yet implemented).
 - Deferred perf/robustness: `getImage()` per-call allocation; loading markers registered
