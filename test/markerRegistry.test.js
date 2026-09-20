@@ -25,12 +25,15 @@ describe('MarkerRegistry load state', () => {
         expect(r.unloaded()).toEqual([]);
     });
 
-    it('returns a marker to the unloaded pool when its load fails', () => {
+    it('treats a load failure as terminal and does not offer it for retry', () => {
+        // Retrying would issue a second addNFTMarkers call, which corrupts the
+        // markers already loaded upstream (jsartoolkitNFT#612).
         const r = new MarkerRegistry();
         const a = r.add(marker('a'));
         r.markLoading(a);
         r.markLoadFailed(a);
-        expect(r.unloaded()).toEqual([a]);
+        expect(a.failed).toBe(true);
+        expect(r.unloaded()).toEqual([]);
     });
 
     it('reports only the new marker when one is added after others loaded', () => {
