@@ -23,6 +23,7 @@ export class MarkerRegistry {
     add(marker) {
         marker.id = null;
         marker.loading = false;
+        marker.failed = false;
         marker.lastSeen = 0;
         marker.visible = false;
         this.markers.push(marker);
@@ -31,17 +32,24 @@ export class MarkerRegistry {
 
     // Markers that still need to be handed to the tracker.
     unloaded() {
-        return this.markers.filter((m) => m.id === null && !m.loading);
+        return this.markers.filter((m) => m.id === null && !m.loading && !m.failed);
     }
 
     markLoading(marker) {
         marker.loading = true;
     }
 
-    // Load failed: return the marker to the unloaded pool so a later attempt
-    // can retry it rather than leaving it stuck mid-load forever.
+    // Load failure is TERMINAL — the marker is not retried.
+    //
+    // Retrying would mean a second loadNFTMarkers() call, and upstream
+    // addNFTMarkers is single-call: a second invocation returns duplicate ids,
+    // overwrites surfaceSet[0..] and replaces the KPM reference set
+    // (webarkit/jsartoolkitNFT#612). A failed load may also have partially
+    // registered datasets natively, so retrying could compound the damage.
+    // Recovering properly needs a fresh controller, not another load.
     markLoadFailed(marker) {
         marker.loading = false;
+        marker.failed = true;
     }
 
     // Called once the tracker has assigned this marker an id.

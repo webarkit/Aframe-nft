@@ -140,11 +140,15 @@ size (DPI-scaled millimetres).
 
 ## Roadmap / known limitations 🚧
 
-- **No pose smoothing yet** — the raw pose is used. A `OneEuroFilter` smoothing option is
-  planned.
-- **Main-thread detection** — fine for a single marker; a Web Worker is a future
-  optimization.
-- **Single marker** per scene for now.
+- **One target tracked at a time.** You can declare several `<a-nft>` elements and all of
+  them are loaded, but jsartoolkitNFT tracks a single target at a time, so they **alternate**
+  rather than appearing together — see
+  [jsartoolkitNFT#613](https://github.com/webarkit/jsartoolkitNFT/issues/613).
+- **Targets must be declared up front.** Markers are loaded in one batch; an `<a-nft>` added
+  after tracking has started is not tracked (it warns), because markers cannot be loaded
+  incrementally — see
+  [jsartoolkitNFT#612](https://github.com/webarkit/jsartoolkitNFT/issues/612).
+- **Main-thread detection** — a Web Worker is a future optimization.
 - A tall mesh standing on the marker shows correct perspective parallax that can read as a
   shift when viewed at a steep angle.
 

@@ -27,8 +27,10 @@
 <div class="example-container">
     <a-scene embedded arnft="videoWidth: 640; videoHeight: 480">
 
-        <!-- One <a-nft> per target. Each is tracked independently, so both can
-             be visible at once and each hides on its own when it leaves view. -->
+        <!-- One <a-nft> per target. Both are loaded, but jsartoolkitNFT tracks
+             only one at a time, so the targets alternate: point at one and its
+             mesh appears; switch, and the first hides as the second takes over.
+             See webarkit/jsartoolkitNFT#613. -->
         <a-nft name="pinball" url="DataNFT/pinball">
             <a-box color="#4CC3D9"></a-box>
         </a-nft>

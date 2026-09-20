@@ -138,8 +138,14 @@ AFRAME.registerSystem('arnft', {
                 });
             },
             (err) => {
+                // Terminal: retrying would issue a second addNFTMarkers call,
+                // which corrupts state upstream (jsartoolkitNFT#612).
                 pending.forEach((marker) => this.registry.markLoadFailed(marker));
-                console.error('arnft: failed to load NFT markers', err);
+                console.error(
+                    'arnft: failed to load NFT markers; they will not be tracked ' +
+                        '(reload the page to retry)',
+                    err,
+                );
             },
         );
     },
