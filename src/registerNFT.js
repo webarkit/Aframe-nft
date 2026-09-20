@@ -3,6 +3,7 @@ import { ARControllerNFT } from '@webarkit/jsartoolkit-nft';
 import { cameraViewRenderer } from './cameraViewRenderer';
 import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
 import { OneEuroFilter } from './oneEuroFilter';
+import { MarkerRegistry } from './markerRegistry';
 
 // Resolve a marker/camera path relative to the HTML page (like any other asset
 // URL), so relative paths keep working under sub-path deployments. Absolute and
@@ -19,6 +20,9 @@ AFRAME.registerSystem('arnft', {
         videoWidth: { type: 'number', default: 640 },
         videoHeight: { type: 'number', default: 480 },
         cameraParam: { type: 'string', default: 'Data/camera_para.dat' },
+        // How long (ms) a marker may go without a pose before its mesh is hidden.
+        // Matches jsartoolkitNFT's own MARKER_LOST_TIME.
+        lostTimeout: { type: 'number', default: 200 },
     },
 
     init: function () {
@@ -27,9 +31,8 @@ AFRAME.registerSystem('arnft', {
         this.controller = null;
         this.videoReady = false;
         this.starting = false;
-        // Markers registered by <a-nft> components, keyed later by tracker id.
-        this.markers = [];
-        this.markersById = new Map();
+        // Markers registered by <a-nft> components: load state + visibility.
+        this.registry = new MarkerRegistry();
 
         this.camV
             .initialize({
@@ -45,15 +48,34 @@ AFRAME.registerSystem('arnft', {
             .catch((err) => console.error('arnft: camera init failed', err));
     },
 
-    // Called by nft-anchor components during their own init().
+    // Called by nft-anchor components during their own init(). All <a-nft>
+    // elements declared in the scene register well before the camera and
+    // tracker finish initialising, so they are loaded together in one batch.
     registerMarker: function (marker) {
-        this.markers.push(marker);
+        this.registry.add(marker);
+        if (this.controller) {
+            // Markers cannot be added once tracking has started: upstream
+            // addNFTMarkers is single-call (webarkit/jsartoolkitNFT#612), and a
+            // second call corrupts the markers already loaded. Warn rather than
+            // silently ignoring it, which is what used to happen.
+            console.warn(
+                `arnft: <a-nft> "${marker.name}" was added after tracking started and will ` +
+                    'not be tracked. jsartoolkitNFT cannot load markers incrementally — ' +
+                    'declare all <a-nft> elements before the scene initialises.',
+            );
+            return;
+        }
         this._maybeStart();
     },
 
     // Start the tracker once the camera is live and at least one marker exists.
     _maybeStart: function () {
-        if (this.starting || this.controller || !this.videoReady || this.markers.length === 0) {
+        if (
+            this.starting ||
+            this.controller ||
+            !this.videoReady ||
+            this.registry.markers.length === 0
+        ) {
             return;
         }
         this.starting = true;
@@ -72,32 +94,53 @@ AFRAME.registerSystem('arnft', {
         this.controller = ar;
         this._setupCamera();
 
+        // Note there is deliberately no 'lostNFTMarker' listener: upstream that
+        // event only tracks one marker at a time (webarkit/jsartoolkitNFT#611),
+        // so with several targets a marker leaving the frame may never fire it.
+        // Visibility is derived from pose timestamps in tick() instead.
         ar.addEventListener('getNFTMarker', (ev) => {
-            const marker = this.markersById.get(ev.data.index);
+            const marker = this.registry.markSeen(ev.data.index, performance.now());
             if (marker) {
                 marker.component.onPose(ev.data.matrixGL_RH);
             }
         });
-        ar.addEventListener('lostNFTMarker', (ev) => {
-            const marker = this.markersById.get(ev.data.index);
-            if (marker) {
-                marker.component.onLost();
-            }
-        });
 
-        const urls = this.markers.map((m) => resolveUrl(m.url));
+        this._loadPendingMarkers();
+    },
+
+    // Hand every registered marker to the tracker in ONE batch.
+    //
+    // This must be a single call: upstream `addNFTMarkers` derives page numbers,
+    // marker ids and surfaceSet indices from its loop counter, so a second call
+    // restarts at 0 — returning duplicate ids, overwriting surfaceSet[0..] and
+    // replacing the whole KPM reference set. Calling it twice corrupts markers
+    // that are already being tracked. See webarkit/jsartoolkitNFT#612.
+    _loadPendingMarkers: function () {
+        const ar = this.controller;
+        if (!ar) {
+            return;
+        }
+        const pending = this.registry.unloaded();
+        if (pending.length === 0) {
+            return;
+        }
+        pending.forEach((marker) => this.registry.markLoading(marker));
+
+        // ids come back positionally, matching the urls we passed in.
         ar.loadNFTMarkers(
-            urls,
+            pending.map((marker) => resolveUrl(marker.url)),
             (ids) => {
                 ids.forEach((id, i) => {
-                    const marker = this.markers[i];
-                    marker.id = id;
-                    this.markersById.set(id, marker);
+                    const marker = pending[i];
+                    this.registry.setId(marker, id);
                     marker.component.onData(ar.getNFTData(id, 0));
                     ar.trackNFTMarkerId(id);
                 });
             },
-            (err) => console.error('arnft: failed to load NFT markers', err),
+            (err) => {
+                pending.forEach((marker) => this.registry.markLoadFailed(marker));
+                console.error('arnft: failed to load NFT markers', err);
+            },
         );
     },
 
@@ -202,15 +245,22 @@ AFRAME.registerSystem('arnft', {
         this.el.renderer.setSize(boxW, boxH, false);
     },
 
-    // Drive one detection pass per frame. process() reads the cropped camera
-    // frame; matches fire the getNFTMarker/lostNFTMarker listeners above.
+    // Drive one detection pass per frame, then expire markers that stopped
+    // being seen. process() reads the cropped camera frame; matches fire the
+    // getNFTMarker listener above.
     tick: function () {
         if (!this.controller || !this.videoReady) {
             return;
         }
         this._resize();
         this._applyProjection();
+        // process() dispatches getNFTMarker synchronously for every marker it
+        // finds, so the registry is up to date before we check for stale ones.
         this.controller.process(this.camV.getImage());
+
+        for (const marker of this.registry.collectStale(performance.now(), this.data.lostTimeout)) {
+            marker.component.onLost();
+        }
     },
 });
 
