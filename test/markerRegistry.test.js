@@ -26,8 +26,8 @@ describe('MarkerRegistry load state', () => {
     });
 
     it('treats a load failure as terminal and does not offer it for retry', () => {
-        // Retrying would issue a second addNFTMarkers call, which corrupts the
-        // markers already loaded upstream (jsartoolkitNFT#612).
+        // Retrying the same url would only fail again; re-adding the <a-nft>
+        // registers a fresh record, which is loaded anew.
         const r = new MarkerRegistry();
         const a = r.add(marker('a'));
         r.markLoading(a);
@@ -119,5 +119,72 @@ describe('MarkerRegistry visibility', () => {
         r.markSeen(0, 1400);
         expect(a.visible).toBe(true);
         expect(r.collectStale(1450, 200)).toEqual([]);
+    });
+});
+
+describe('MarkerRegistry removal', () => {
+    it('stops routing poses to a removed marker', () => {
+        const r = new MarkerRegistry();
+        const a = r.setId(r.add(marker('a')), 0);
+        r.remove(a);
+        expect(r.has(a)).toBe(false);
+        expect(r.get(0)).toBeNull();
+        expect(r.markSeen(0, 1000)).toBeNull();
+    });
+
+    it('never reports a removed marker as stale', () => {
+        // A removed <a-nft> must not receive onLost after it is gone.
+        const r = new MarkerRegistry();
+        const a = r.setId(r.add(marker('a')), 0);
+        r.markSeen(0, 1000);
+        r.remove(a);
+        expect(r.collectStale(1300, 200)).toEqual([]);
+    });
+
+    it('ignores removing a marker that is not registered', () => {
+        const r = new MarkerRegistry();
+        r.add(marker('a'));
+        r.remove(marker('x'));
+        expect(r.markers).toHaveLength(1);
+    });
+
+    it('reuses the id of a removed marker when the same url is added again', () => {
+        // jsartoolkitNFT cannot unload a marker and holds at most 20, so a
+        // re-added <a-nft> must not load its target a second time.
+        const r = new MarkerRegistry();
+        r.remove(r.setId(r.add(marker('a')), 0));
+        const again = r.add(marker('a'));
+        expect(again.id).toBe(0);
+        expect(r.get(0)).toBe(again);
+        expect(r.unloaded()).toEqual([]);
+    });
+
+    it('does not reuse an id for a different url', () => {
+        const r = new MarkerRegistry();
+        r.remove(r.setId(r.add(marker('a')), 0));
+        const b = r.add(marker('b'));
+        expect(b.id).toBeNull();
+        expect(r.unloaded()).toEqual([b]);
+    });
+
+    it('hands each parked id out only once', () => {
+        // Two <a-nft> with the same url, both loaded, then both removed.
+        const r = new MarkerRegistry();
+        const first = r.setId(r.add(marker('a')), 0);
+        const second = r.setId(r.add(marker('a')), 1);
+        r.remove(first);
+        r.remove(second);
+        const ids = [r.add(marker('a')).id, r.add(marker('a')).id, r.add(marker('a')).id];
+        expect(ids).toEqual([0, 1, null]);
+    });
+
+    it('parks the id when a marker is removed while its load is in flight', () => {
+        const r = new MarkerRegistry();
+        const a = r.add(marker('a'));
+        r.markLoading(a);
+        r.remove(a);
+        expect(r.setId(a, 3)).toBeNull();
+        expect(r.get(3)).toBeNull();
+        expect(r.add(marker('a')).id).toBe(3);
     });
 });
