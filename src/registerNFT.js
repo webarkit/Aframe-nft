@@ -308,9 +308,17 @@ AFRAME.registerComponent('nft-anchor', {
         });
     },
 
-    // The entity was removed or detached: stop routing poses to it.
+    // The entity was removed or detached, or nft-anchor was removed from it:
+    // stop routing poses to it. No pose and no onLost will arrive after this,
+    // so hide the mesh now rather than leave it frozen at its last pose.
+    //
+    // A-Frame does not re-run init() when the same element is appended again,
+    // so a removed <a-nft> is not tracked again — create a new element instead.
     remove: function () {
         this.el.sceneEl.systems.arnft.unregisterMarker(this.marker);
+        this.marker = null;
+        this.onLost();
+        this.latestMatrix = null;
     },
 
     // Recompose / rebuild when a tunable changes at runtime (scaleFactor, offsets,
