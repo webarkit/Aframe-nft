@@ -74,3 +74,70 @@ describe('cameraViewRenderer.getImage', () => {
         expect(r.getFrame()).toBe(2);
     });
 });
+
+// A desktop with a real webcam listed first and a virtual camera listed last,
+// as with Meta Quest Link installed: its cameras fail with NotReadableError
+// when no headset is connected. `failures` maps a deviceId to the error name
+// getUserMedia rejects with when that device is requested.
+function fakeMediaDevices(failures = {}) {
+    const stream = { id: 'stream' };
+    return {
+        stream,
+        enumerateDevices: async () => [
+            { kind: 'videoinput', deviceId: 'webcam', label: 'Trust Webcam' },
+            { kind: 'audioinput', deviceId: 'mic', label: 'Microphone' },
+            { kind: 'videoinput', deviceId: 'quest', label: 'Meta Quest Pro' },
+        ],
+        getUserMedia: vi.fn(async (constraints) => {
+            const requested = constraints.video.deviceId && constraints.video.deviceId.exact;
+            if (requested && failures[requested]) {
+                throw new DOMException('Could not start video source', failures[requested]);
+            }
+            return stream;
+        }),
+    };
+}
+
+describe('cameraViewRenderer.initialize', () => {
+    let devices;
+
+    const start = async (failures) => {
+        devices = fakeMediaDevices(failures);
+        vi.stubGlobal('navigator', { mediaDevices: devices });
+        const video = { readyState: 1, videoWidth: 640, videoHeight: 480, srcObject: null };
+        const r = new cameraViewRenderer(video);
+        await r.initialize({ facingMode: 'environment', width: 640, height: 480 });
+        return video;
+    };
+
+    beforeEach(() => {
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fakeContext());
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    it('asks for the last camera first (the back camera on most phones)', async () => {
+        // Characterisation: guards the existing mobile behaviour.
+        const video = await start();
+        expect(devices.getUserMedia).toHaveBeenCalledTimes(1);
+        expect(devices.getUserMedia.mock.calls[0][0].video.deviceId).toEqual({ exact: 'quest' });
+        expect(video.srcObject).toBe(devices.stream);
+    });
+
+    it('falls back to facingMode when the last camera cannot start', async () => {
+        const video = await start({ quest: 'NotReadableError' });
+        expect(devices.getUserMedia).toHaveBeenCalledTimes(2);
+        const retry = devices.getUserMedia.mock.calls[1][0].video;
+        expect(retry.deviceId).toBeUndefined();
+        expect(retry.facingMode).toBe('environment');
+        expect(video.srcObject).toBe(devices.stream);
+    });
+
+    it('does not retry when camera permission is denied', async () => {
+        await expect(start({ quest: 'NotAllowedError' })).rejects.toMatchObject({ name: 'NotAllowedError' });
+        expect(devices.getUserMedia).toHaveBeenCalledTimes(1);
+    });
+});

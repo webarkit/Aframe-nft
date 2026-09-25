@@ -41,7 +41,7 @@ export class cameraViewRenderer {
                         hint.video.deviceId = { exact: videoDevices[videoDevices.length - 1] };
                     }
                 }
-                this._video.srcObject = await navigator.mediaDevices.getUserMedia(hint);
+                this._video.srcObject = await this._openStream(hint);
                 this._video = await new Promise((resolve, reject) => {
                     // Metadata may already be available (reused element); don't wait forever.
                     if (this._video.readyState >= 1 /* HAVE_METADATA */) {
@@ -59,6 +59,24 @@ export class cameraViewRenderer {
             }
         } else {
             return Promise.reject("Sorry, Your device does not support this experience.");
+        }
+    }
+
+    // Open the camera stream. With several cameras the hint asks for the last
+    // one, which on most phones is the back camera. On a desktop the last one
+    // can be a virtual camera that cannot start — Meta Quest Link, for one,
+    // registers several that fail with NotReadableError when no headset is
+    // connected — so fall back to letting facingMode choose. A denied
+    // permission would only be denied again, so it is not retried.
+    async _openStream(hint) {
+        try {
+            return await navigator.mediaDevices.getUserMedia(hint);
+        } catch (error) {
+            if (!hint.video.deviceId || error.name === "NotAllowedError") {
+                throw error;
+            }
+            const { deviceId, ...video } = hint.video;
+            return navigator.mediaDevices.getUserMedia({ ...hint, video });
         }
     }
 
