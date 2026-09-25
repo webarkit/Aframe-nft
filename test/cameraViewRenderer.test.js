@@ -67,7 +67,9 @@ describe('cameraViewRenderer.getImage', () => {
         const first = r.getImage();
         vi.advanceTimersByTime(20); // over 1000 / 60 ms
         const second = r.getImage();
-        expect(second).not.toBe(first);
+        // Object.is rather than .not.toBe: toBe deep-compares two different
+        // objects (here two 300 KB frames) to build its hint, which takes ~2 s.
+        expect(Object.is(second, first)).toBe(false);
         expect(ctx.getImageData).toHaveBeenCalledTimes(2);
         expect(r.getFrame()).toBe(2);
     });
