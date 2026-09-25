@@ -33,12 +33,12 @@ npm install
 
 | Command | What it does |
 |---------|--------------|
-| `npm run dev` | Start the Vite dev server (HMR) and open the example |
+| `npm run dev` | Start the Vite dev server (HMR) and open the examples index |
 | `npm run build` | Build the IIFE bundle to `dist/AframeNft.js` |
 | `npm test` | Run the unit tests (Vitest) |
 | `npm run preview` | Preview a production build |
 
-Then open `http://localhost:8080/examples/basic.html` and point the camera at the
+Then open `http://localhost:8080/examples/`, pick an example, and point the camera at the
 [`pinball` target](examples/DataNFT/).
 
 ## Usage 📝
