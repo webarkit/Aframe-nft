@@ -167,25 +167,29 @@ Decisions made during Phase 2 (see also Decision Log):
   exposed via `smooth` / `smoothMinCutoff` / `smoothBeta` on `nft-anchor` (on by default).
   Implemented as a tested module (`src/oneEuroFilter.js`).
 - ✅ **Multi-marker — `<a-nft>` per target, visibility derived locally.** Several `<a-nft>`
-  elements each anchor their own target. Three upstream constraints shaped this:
-  - `lostNFTMarker` keeps found/lost state in shared scalars, so switching targets inside the
-    200 ms window strands the previous marker's lost event
-    ([jsartoolkitNFT#611](https://github.com/webarkit/jsartoolkitNFT/issues/611)). We
-    therefore **do not use it**: each pose stamps `lastSeen`, and `tick()` hides markers that
-    go stale (`lostTimeout`, default 200 ms). Correct for any number of markers, on any
-    version of the library.
-  - `addNFTMarkers` derives ids/pages/`surfaceSet` indices from its loop counter, so it is
-    **single-call** — a second call returns duplicate ids and corrupts markers already
-    tracked ([#612](https://github.com/webarkit/jsartoolkitNFT/issues/612)). All markers are
-    loaded in **one batch**; late-registered `<a-nft>` warns instead of failing silently.
-  - Only **one marker is tracked at a time**: `detectedPage` is a single scalar and KPM
-    matching is skipped while tracking
-    ([#613](https://github.com/webarkit/jsartoolkitNFT/issues/613) requests `maxTrack`).
-    Targets therefore alternate rather than appearing together — expected, not a defect here.
+  elements each anchor their own target. Three upstream constraints originally shaped this;
+  **jsartoolkitNFT 1.13.0 lifts all three**:
+  - `lostNFTMarker` was single-marker
+    ([jsartoolkitNFT#611](https://github.com/webarkit/jsartoolkitNFT/issues/611)). It is
+    per-marker since 1.13.0, but we still derive visibility from pose timestamps
+    (`lostTimeout`): it is tunable where the upstream timeout is fixed at 200 ms, and it
+    behaves the same on any library version.
+  - `addNFTMarkers` was single-call
+    ([#612](https://github.com/webarkit/jsartoolkitNFT/issues/612)). Fixed in 1.13.0 (#666):
+    ids continue across calls and earlier markers stay loaded. Markers now load **one call
+    per marker, at any time** (`src/markerLoader.js`) — an `<a-nft>` added after tracking
+    started is loaded on the spot, and a bad `url` fails only its own `<a-nft>`.
+  - Only one marker could be tracked at a time
+    ([#613](https://github.com/webarkit/jsartoolkitNFT/issues/613)). 1.13.0 (#658) tracks
+    every loaded marker at once; the `continuousDetection` / `detectionInterval` system
+    attributes expose its detection policy.
 
-  `MarkerRegistry` (tested, DOM-free) holds load state + per-marker visibility, so if #613
-  lands this works unchanged.
-- Worker-based detection (Approach A) as a perf optimization.
+  jsartoolkitNFT cannot unload a marker and holds at most 20, so a removed `<a-nft>` parks
+  its tracker id in `MarkerRegistry`, and re-adding the same `url` reuses it.
+- ✅ **`getImage()` returns the captured frame instead of a per-call copy** (#6) — safe
+  because `process()` copies the pixels into the WASM heap synchronously.
+- Worker-based detection (Approach A) as a perf optimization (#7). Re-evaluate against
+  jsartoolkitNFT's threaded build (`@webarkit/jsartoolkit-nft/td`), which since 1.13.0 runs
+  detection off the main thread but uses pthreads (SharedArrayBuffer, so the page must be
+  cross-origin isolated with COOP/COEP headers).
 - Optional tracking-confidence threshold (not yet implemented).
-- Deferred perf/robustness: `getImage()` per-call allocation; loading markers registered
-  after the tracker is ready.
