@@ -88,7 +88,9 @@ same time, each with its own pose:
 ```
 
 `<a-nft>` elements can also be added or removed at runtime with ordinary DOM calls — see
-[`examples/dynamic.html`](examples/dynamic.html).
+[`examples/dynamic.html`](examples/dynamic.html). To bring a removed target back, create a
+new `<a-nft>` element: A-Frame does not re-initialise components when the same element is
+appended again, so a re-appended `<a-nft>` stays hidden and is not tracked.
 
 ## API reference 📖
 
