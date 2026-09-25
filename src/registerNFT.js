@@ -4,6 +4,7 @@ import { cameraViewRenderer } from './cameraViewRenderer';
 import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
 import { OneEuroFilter } from './oneEuroFilter';
 import { MarkerRegistry } from './markerRegistry';
+import { loadPendingMarkers } from './markerLoader';
 
 // Resolve a marker/camera path relative to the HTML page (like any other asset
 // URL), so relative paths keep working under sub-path deployments. Absolute and
@@ -23,6 +24,13 @@ AFRAME.registerSystem('arnft', {
         // How long (ms) a marker may go without a pose before its mesh is hidden.
         // Matches jsartoolkitNFT's own MARKER_LOST_TIME.
         lostTimeout: { type: 'number', default: 200 },
+        // Detection policy (jsartoolkitNFT 1.13.0): while some markers are
+        // tracked and others are not, look for the missing ones at most every
+        // `detectionInterval` ms (0 = every frame). continuousDetection: false
+        // stops looking while anything is tracked — cheapest, but a second
+        // target entering the view is not found.
+        continuousDetection: { type: 'boolean', default: true },
+        detectionInterval: { type: 'number', default: 300 },
     },
 
     init: function () {
@@ -48,24 +56,35 @@ AFRAME.registerSystem('arnft', {
             .catch((err) => console.error('arnft: camera init failed', err));
     },
 
-    // Called by nft-anchor components during their own init(). All <a-nft>
-    // elements declared in the scene register well before the camera and
-    // tracker finish initialising, so they are loaded together in one batch.
+    // Called by nft-anchor components during their own init(). Returns the
+    // registry record, which the component hands back to unregisterMarker().
+    //
+    // Markers can be registered at any time: since jsartoolkitNFT 1.13.0 they
+    // load incrementally (webarkit/jsartoolkitNFT#612), so an <a-nft> added
+    // after tracking has started is loaded on the spot.
     registerMarker: function (marker) {
-        this.registry.add(marker);
-        if (this.controller) {
-            // Markers cannot be added once tracking has started: upstream
-            // addNFTMarkers is single-call (webarkit/jsartoolkitNFT#612), and a
-            // second call corrupts the markers already loaded. Warn rather than
-            // silently ignoring it, which is what used to happen.
-            console.warn(
-                `arnft: <a-nft> "${marker.name}" was added after tracking started and will ` +
-                    'not be tracked. jsartoolkitNFT cannot load markers incrementally — ' +
-                    'declare all <a-nft> elements before the scene initialises.',
-            );
-            return;
+        const record = this.registry.add({
+            name: marker.name,
+            // Resolved here so the registry can recognise a re-added url.
+            url: resolveUrl(marker.url),
+            component: marker.component,
+        });
+        if (record.id !== null) {
+            // A re-added <a-nft>: its target is still loaded in the tracker.
+            record.component.onData(this.controller.getNFTData(record.id));
+        } else if (this.controller) {
+            this._loadPendingMarkers();
+        } else {
+            this._maybeStart();
         }
-        this._maybeStart();
+        return record;
+    },
+
+    // Called by nft-anchor components when they are removed. jsartoolkitNFT
+    // cannot unload a marker, so its target stays loaded and is reused if an
+    // <a-nft> with the same url is added again.
+    unregisterMarker: function (record) {
+        this.registry.remove(record);
     },
 
     // Start the tracker once the camera is live and at least one marker exists.
@@ -94,10 +113,16 @@ AFRAME.registerSystem('arnft', {
         this.controller = ar;
         this._setupCamera();
 
-        // Note there is deliberately no 'lostNFTMarker' listener: upstream that
-        // event only tracks one marker at a time (webarkit/jsartoolkitNFT#611),
-        // so with several targets a marker leaving the frame may never fire it.
-        // Visibility is derived from pose timestamps in tick() instead.
+        // jsartoolkitNFT 1.13.0 tracks every loaded marker at once; these set
+        // how often it looks for the ones not tracked yet.
+        ar.setContinuousDetection(this.data.continuousDetection);
+        ar.setDetectionInterval(this.data.detectionInterval);
+
+        // There is deliberately no 'lostNFTMarker' listener: visibility is
+        // derived from pose timestamps in tick() instead. That behaves the same
+        // on any jsartoolkitNFT version (before 1.13.0 the event was
+        // single-marker, webarkit/jsartoolkitNFT#611), and `lostTimeout` stays
+        // tunable where upstream's timeout is fixed at 200 ms.
         ar.addEventListener('getNFTMarker', (ev) => {
             const marker = this.registry.markSeen(ev.data.index, performance.now());
             if (marker) {
@@ -108,46 +133,22 @@ AFRAME.registerSystem('arnft', {
         this._loadPendingMarkers();
     },
 
-    // Hand every registered marker to the tracker in ONE batch.
-    //
-    // This must be a single call: upstream `addNFTMarkers` derives page numbers,
-    // marker ids and surfaceSet indices from its loop counter, so a second call
-    // restarts at 0 — returning duplicate ids, overwriting surfaceSet[0..] and
-    // replacing the whole KPM reference set. Calling it twice corrupts markers
-    // that are already being tracked. See webarkit/jsartoolkitNFT#612.
+    // Hand every marker that is not loaded yet to the tracker, one call per
+    // marker. Safe to call at any time — see markerLoader.js.
     _loadPendingMarkers: function () {
         const ar = this.controller;
         if (!ar) {
             return;
         }
-        const pending = this.registry.unloaded();
-        if (pending.length === 0) {
-            return;
-        }
-        pending.forEach((marker) => this.registry.markLoading(marker));
-
-        // ids come back positionally, matching the urls we passed in.
-        ar.loadNFTMarkers(
-            pending.map((marker) => resolveUrl(marker.url)),
-            (ids) => {
-                ids.forEach((id, i) => {
-                    const marker = pending[i];
-                    this.registry.setId(marker, id);
-                    marker.component.onData(ar.getNFTData(id, 0));
-                    ar.trackNFTMarkerId(id);
-                });
-            },
-            (err) => {
-                // Terminal: retrying would issue a second addNFTMarkers call,
-                // which corrupts state upstream (jsartoolkitNFT#612).
-                pending.forEach((marker) => this.registry.markLoadFailed(marker));
+        loadPendingMarkers(ar, this.registry, {
+            onLoaded: (marker, data) => marker.component.onData(data),
+            onFailed: (marker, reason) =>
                 console.error(
-                    'arnft: failed to load NFT markers; they will not be tracked ' +
-                        '(reload the page to retry)',
-                    err,
-                );
-            },
-        );
+                    `arnft: failed to load NFT marker "${marker.name}" (${marker.url}); ` +
+                        'it will not be tracked',
+                    reason,
+                ),
+        });
     },
 
     // Compute and store the tracker's projection matrix for the a-camera.
@@ -300,12 +301,16 @@ AFRAME.registerComponent('nft-anchor', {
         this.markerData = null;
         this._buildFilter();
 
-        const system = this.el.sceneEl.systems.arnft;
-        system.registerMarker({
+        this.marker = this.el.sceneEl.systems.arnft.registerMarker({
             name: this.data.entityName,
             url: this.data.markerUrl,
             component: this,
         });
+    },
+
+    // The entity was removed or detached: stop routing poses to it.
+    remove: function () {
+        this.el.sceneEl.systems.arnft.unregisterMarker(this.marker);
     },
 
     // Recompose / rebuild when a tunable changes at runtime (scaleFactor, offsets,
