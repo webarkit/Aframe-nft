@@ -5,7 +5,9 @@ export default defineConfig({
     // camera_para.dat) load alongside the source modules.
     server: {
         port: 8080,
-        open: '/examples/basic.html',
+        // The examples index. Keep it in examples/: a root index.html would
+        // become Vite's fallback page for every missing file.
+        open: '/examples/',
     },
     build: {
         // Library build: a single global bundle, matching the historical
