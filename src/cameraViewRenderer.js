@@ -1,10 +1,13 @@
 export class cameraViewRenderer {
     constructor(video) {
         this.canvas_process = document.createElement("canvas");
-        this.context_process = this.canvas_process.getContext("2d", { alpha: false });
+        // willReadFrequently: getImageData() runs every captured frame, which
+        // is much faster on a CPU-backed canvas.
+        this.context_process = this.canvas_process.getContext("2d", { alpha: false, willReadFrequently: true });
         this._video = video;
         this._frame = 0;
         this.lastCache = 0;
+        this.imageData = null;
         // Default so the getImage() frame-rate gate never divides by undefined (NaN).
         this.targetFrameRate = 60;
     }
@@ -63,20 +66,20 @@ export class cameraViewRenderer {
         return this._frame;
     }
 
+    // Returns the latest processing frame. The same ImageData is returned until
+    // the frame-rate gate captures a new one, instead of a fresh copy per call:
+    // ARControllerNFT.process() copies the pixels into the WASM heap
+    // synchronously (passVideoData -> HEAPU8.set) and keeps no reference.
+    // Callers must not mutate it.
     getImage() {
         const now = Date.now();
         if (now - this.lastCache > 1000 / this.targetFrameRate) {
             this.context_process.drawImage(this._video, 0, 0, this.vw, this.vh, this.ox, this.oy, this.w, this.h);
-            const imageData = this.context_process.getImageData(0, 0, this.pw, this.ph);
-            if (this.imageDataCache == null) {
-                this.imageDataCache = imageData.data;
-            } else {
-                this.imageDataCache.set(imageData.data);
-            }
+            this.imageData = this.context_process.getImageData(0, 0, this.pw, this.ph);
             this.lastCache = now;
             this._frame++;
         }
-        return new ImageData(this.imageDataCache.slice(), this.pw, this.ph);
+        return this.imageData;
     }
 
     prepareImage() {
