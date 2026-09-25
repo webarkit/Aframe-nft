@@ -7,6 +7,8 @@ Declare an image target with `<a-nft>` and anchor any A-Frame mesh to it.
 ## Features ✨
 
 - Declarative `<a-nft>` primitive — point it at an NFT descriptor set and drop a mesh inside.
+- Multiple targets — one `<a-nft>` per image target, all tracked at the same time. `<a-nft>`
+  elements can be added or removed while the scene runs.
 - Direct jsartoolkitNFT integration; detection runs per frame.
 - Camera/overlay alignment modelled on AR.js: the video and the WebGL canvas are sized to
   the same source-aspect box, so the 3D registers with the video for **any** camera
@@ -18,7 +20,7 @@ Declare an image target with `<a-nft>` and anchor any A-Frame mesh to it.
 - A **webcam**.
 - A **secure context** — `getUserMedia` requires `https://` or `http://localhost`.
 - An **NFT descriptor set** (`.fset`, `.fset3`, `.iset`) and an ARToolKit **camera
-  parameter** file (`camera_para.dat`). The repo ships a `pinball` target and camera file
+  parameter** file (`camera_para.dat`). The repo ships `pinball` and `kuva` targets and a camera file
   under [`examples/`](examples/).
 
 ## Getting started 🛠️
@@ -75,6 +77,19 @@ video.
 `.fset` / `.fset3` / `.iset`). Relative `url` / `cameraParam` paths resolve relative to the
 HTML page, like any other asset URL.
 
+### Multiple targets
+
+Declare one `<a-nft>` per image target. Every target is tracked independently and at the
+same time, each with its own pose:
+
+```html
+<a-nft name="pinball" url="DataNFT/pinball"><a-box color="#4CC3D9"></a-box></a-nft>
+<a-nft name="kuva" url="DataNFT/kuva"><a-sphere color="#E4572E"></a-sphere></a-nft>
+```
+
+`<a-nft>` elements can also be added or removed at runtime with ordinary DOM calls — see
+[`examples/dynamic.html`](examples/dynamic.html).
+
 ## API reference 📖
 
 ### `arnft` system — configured on `<a-scene>`
@@ -84,6 +99,9 @@ HTML page, like any other asset URL.
 | `videoWidth` | number | `640` | Requested capture width |
 | `videoHeight` | number | `480` | Requested capture height |
 | `cameraParam` | string | `Data/camera_para.dat` | ARToolKit camera parameter file |
+| `lostTimeout` | number | `200` | How long (ms) a target may go unseen before its mesh is hidden |
+| `continuousDetection` | boolean | `true` | Keep looking for untracked targets while others are tracked. `false` is cheapest, but a second target entering the view is not found |
+| `detectionInterval` | number | `300` | Minimum time (ms) between searches for untracked targets while others are tracked; `0` searches every frame |
 
 ### `<a-nft>` primitive (`nft-anchor` component)
 
@@ -140,14 +158,9 @@ size (DPI-scaled millimetres).
 
 ## Roadmap / known limitations 🚧
 
-- **One target tracked at a time.** You can declare several `<a-nft>` elements and all of
-  them are loaded, but jsartoolkitNFT tracks a single target at a time, so they **alternate**
-  rather than appearing together — see
-  [jsartoolkitNFT#613](https://github.com/webarkit/jsartoolkitNFT/issues/613).
-- **Targets must be declared up front.** Markers are loaded in one batch; an `<a-nft>` added
-  after tracking has started is not tracked (it warns), because markers cannot be loaded
-  incrementally — see
-  [jsartoolkitNFT#612](https://github.com/webarkit/jsartoolkitNFT/issues/612).
+- **At most 20 targets per page.** jsartoolkitNFT holds at most 20 markers and cannot unload
+  one, so a removed `<a-nft>` keeps its target loaded; adding an `<a-nft>` with the same `url`
+  again reuses it rather than loading it twice.
 - **Main-thread detection** — a Web Worker is a future optimization.
 - A tall mesh standing on the marker shows correct perspective parallax that can read as a
   shift when viewed at a steep angle.
