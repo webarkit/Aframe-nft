@@ -24,5 +24,5 @@ export const version =
 export const jsartoolkitNFTVersion =
     typeof __JSARTOOLKIT_NFT_VERSION__ !== 'undefined' ? __JSARTOOLKIT_NFT_VERSION__ : 'unknown';
 
-/** The start-up console line, e.g. `Aframe-nft 0.1.0 (jsartoolkitNFT 1.13.0)`. */
+/** The start-up console line: `Aframe-nft <version> (jsartoolkitNFT <version>)`. */
 export const banner = `Aframe-nft ${version} (jsartoolkitNFT ${jsartoolkitNFTVersion})`;
