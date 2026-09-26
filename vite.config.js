@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-    // Serve the whole project in dev so examples/ (HTML, config.json, DataNFT,
+    // Serve the whole project in dev so examples/ (HTML, DataNFT descriptors,
     // camera_para.dat) load alongside the source modules.
     server: {
         port: 8080,
