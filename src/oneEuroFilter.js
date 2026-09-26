@@ -1,20 +1,44 @@
-// 1€ filter (Casiez et al.) — an adaptive low-pass filter that trades lag for
-// jitter based on signal speed: slow movement is smoothed hard (low jitter),
-// fast movement is smoothed little (low lag). Used here to de-noise the raw NFT
-// pose matrix, filtering each of the 16 elements independently.
-//
-// Kept dependency-free and DOM-free so it can be unit-tested in isolation.
+/**
+ * 1€ filter: an adaptive low-pass filter that trades jitter for lag based on
+ * how fast the signal moves. Slow movement is smoothed hard (low jitter); fast
+ * movement is smoothed little (low lag). Used here to de-noise the raw NFT
+ * pose, filtering each of the 16 matrix elements independently.
+ *
+ * Casiez, Roussel and Vogel, "1€ Filter: A Simple Speed-based Low-pass Filter
+ * for Noisy Input in Interactive Systems", CHI 2012.
+ * https://gery.casiez.net/1euro/
+ *
+ * Kept dependency-free and DOM-free so it can be unit-tested in isolation.
+ *
+ * @module oneEuroFilter
+ */
 
-// Smoothing factor for a given cutoff frequency (Hz) and time delta (seconds).
+/**
+ * Exponential-smoothing factor for a cutoff frequency and a time step.
+ *
+ * @param {number} cutoff Cutoff frequency in Hz.
+ * @param {number} dt Time since the previous sample, in seconds.
+ * @returns {number} Factor in (0, 1). Higher values follow the input more closely.
+ */
 export function smoothingAlpha(cutoff, dt) {
     const tau = 1 / (2 * Math.PI * cutoff);
     return 1 / (1 + tau / dt);
 }
 
+/**
+ * Stateful 1€ filter over arrays of numbers, such as the 16 elements of a
+ * pose matrix.
+ */
 export class OneEuroFilter {
-    // minCutoff: baseline smoothing (lower = smoother/more lag at rest).
-    // beta: speed coefficient (higher = less lag while moving).
-    // dCutoff: cutoff for the derivative estimate.
+    /**
+     * @param {object} [options]
+     * @param {number} [options.minCutoff=0.0001] Baseline cutoff in Hz. Lower
+     *     is smoother at rest, with more lag.
+     * @param {number} [options.beta=0.01] Speed coefficient. Higher reduces lag
+     *     while moving.
+     * @param {number} [options.dCutoff=1.0] Cutoff in Hz for the derivative
+     *     (speed) estimate.
+     */
     constructor({ minCutoff = 0.0001, beta = 0.01, dCutoff = 1.0 } = {}) {
         this.minCutoff = minCutoff;
         this.beta = beta;
@@ -22,14 +46,21 @@ export class OneEuroFilter {
         this.reset();
     }
 
+    /** Forget all state; the next sample passes through unchanged. */
     reset() {
         this.xPrev = null;
         this.dxPrev = null;
         this.tPrev = null;
     }
 
-    // Filter an array of numbers at timestamp t (milliseconds). Returns a new
-    // array; the first call seeds state and returns a copy of the input.
+    /**
+     * Filter one sample. The first call after construction or {@link reset}
+     * seeds the state and returns a copy of the input.
+     *
+     * @param {number} t Timestamp in milliseconds.
+     * @param {number[]} x Sample. Its length must stay the same between calls.
+     * @returns {number[]} A new array with the filtered values.
+     */
     filter(t, x) {
         if (this.xPrev === null) {
             this.xPrev = x.slice();
