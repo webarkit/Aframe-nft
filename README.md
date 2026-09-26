@@ -20,9 +20,10 @@ follows the printed image in the camera view.
 </a-nft>
 ```
 
-> **Status:** early (0.1.x). The `<a-nft>` API is small and stable in spirit, but may still
-> change before 1.0. An npm package is coming soon; until then, use the bundle from this
-> repository (see [Using it in your page](#using-it-in-your-page-)).
+> **Status:** early (0.x; see the [changelog](CHANGELOG.md)). The `<a-nft>` API is small and
+> stable in spirit, but may still change before 1.0. An npm package is coming soon; until
+> then, use the bundle from this repository (see
+> [Using it in your page](#using-it-in-your-page-)).
 
 ## Contents
 
@@ -253,7 +254,7 @@ The content is centred on the target automatically, using the target's real-worl
 At start-up the bundle logs its version, right after A-Frame's own lines:
 
 ```
-Aframe-nft 0.1.0 (jsartoolkitNFT 1.13.0)
+Aframe-nft 0.2.0 (jsartoolkitNFT 1.13.0)
 ```
 
 The same version is available from code as `AframeNft.version`.
