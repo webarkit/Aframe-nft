@@ -273,6 +273,14 @@ build and the jsartoolkitNFT version inside it.
   Network tab shows the 404s);
 - a page can hold at most 20 targets.
 
+**`404 (Not Found)` errors for `….zft` at start-up.** These are expected, one per target. They
+are harmless as long as no `arnft: failed to load NFT marker` error follows.
+- Before loading a target's `.fset` / `.iset` / `.fset3` files, jsartoolkitNFT checks whether a
+  compressed `.zft` version exists next to them, and falls back to the three files when it does
+  not.
+- The browser logs the failed check as an error.
+- See [webarkit/jsartoolkitNFT#676](https://github.com/webarkit/jsartoolkitNFT/issues/676).
+
 **The target is not detected.**
 - Use good, even lighting.
 - Let the target fill a reasonable part of the view.
