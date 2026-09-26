@@ -1,25 +1,58 @@
+/**
+ * A-Frame glue. Registers:
+ *
+ * - the **`arnft` system**, one per scene: it owns the camera, the single
+ *   jsartoolkitNFT tracker and the per-frame detection loop;
+ * - the **`nft-anchor` component**: each instance registers one target with the
+ *   system, receives its pose callbacks (`onData`, `onPose`, `onLost`) and turns
+ *   them into the entity's transform;
+ * - the **`<a-nft>` primitive**: an entity with `nft-anchor`, mapping
+ *   `url` and `name` onto it.
+ *
+ * Logic that can be tested without A-Frame lives in the imported modules. This
+ * file is verified with the examples on a real camera, plus the removal test in
+ * `test/nftAnchor.test.js`.
+ *
+ * @module registerNFT
+ */
 import 'aframe';
 import { ARControllerNFT } from '@webarkit/jsartoolkit-nft';
 import { cameraViewRenderer } from './cameraViewRenderer';
 import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
-import { OneEuroFilter } from './oneEuroFilter';
+import { PoseFilter } from './poseFilter';
 import { MarkerRegistry } from './markerRegistry';
 import { loadPendingMarkers } from './markerLoader';
 
-// Resolve a marker/camera path relative to the HTML page (like any other asset
-// URL), so relative paths keep working under sub-path deployments. Absolute and
-// root-relative URLs pass through unchanged.
+/**
+ * Resolve a marker or camera path against the HTML page, like any other asset
+ * URL, so relative paths keep working under sub-path deployments. Absolute and
+ * root-relative URLs pass through unchanged.
+ *
+ * @param {string} path
+ * @returns {string} Absolute URL.
+ */
 function resolveUrl(path) {
     return new URL(path, document.baseURI).href;
 }
 
-// The `arnft` system owns the camera, the jsartoolkitNFT tracker, and the
-// per-frame detection loop. Components register their marker with it and receive
-// pose callbacks — the tracker runs once, not per component.
+/**
+ * `arnft` system: set on `<a-scene>`. It owns the camera, the jsartoolkitNFT
+ * tracker and the per-frame detection loop. Components register their target
+ * with it and receive pose callbacks: the tracker runs once per scene, not
+ * once per component.
+ *
+ * Page requirements:
+ * - a `<video id="video">` element, which receives the camera feed;
+ * - an `embedded` scene, so the canvas can be sized to match the video;
+ * - an `<a-camera>` (or `[camera]` entity) at the origin with `look-controls`
+ *   disabled. The tracker's projection is applied to it.
+ */
 AFRAME.registerSystem('arnft', {
     schema: {
+        // Requested capture size. These are ideals: the browser may pick another.
         videoWidth: { type: 'number', default: 640 },
         videoHeight: { type: 'number', default: 480 },
+        // ARToolKit camera parameter file, resolved against the page.
         cameraParam: { type: 'string', default: 'Data/camera_para.dat' },
         // How long (ms) a marker may go without a pose before its mesh is hidden.
         // Matches jsartoolkitNFT's own MARKER_LOST_TIME.
@@ -33,6 +66,11 @@ AFRAME.registerSystem('arnft', {
         detectionInterval: { type: 'number', default: 300 },
     },
 
+    /**
+     * Start the camera right away, preferring the rear camera and capturing at
+     * most 60 fps. The tracker is created later, in `_maybeStart()`, once the
+     * camera is live and at least one `<a-nft>` has registered.
+     */
     init: function () {
         this.video = document.getElementById('video');
         this.camV = new cameraViewRenderer(this.video);
@@ -56,12 +94,19 @@ AFRAME.registerSystem('arnft', {
             .catch((err) => console.error('arnft: camera init failed', err));
     },
 
-    // Called by nft-anchor components during their own init(). Returns the
-    // registry record, which the component hands back to unregisterMarker().
-    //
-    // Markers can be registered at any time: since jsartoolkitNFT 1.13.0 they
-    // load incrementally (webarkit/jsartoolkitNFT#612), so an <a-nft> added
-    // after tracking has started is loaded on the spot.
+    /**
+     * Register a target. Called by `nft-anchor` components during their own
+     * `init()`.
+     *
+     * Targets can be registered at any time: since jsartoolkitNFT 1.13.0 they
+     * load incrementally (webarkit/jsartoolkitNFT#612), so an `<a-nft>` added
+     * after tracking has started is loaded on the spot.
+     *
+     * @param {{name: string, url: string, component: object}} marker `url` may
+     *     be relative to the page; `component` is the calling `nft-anchor`.
+     * @returns {import('./markerRegistry').MarkerRecord} The registry record,
+     *     which the component hands back to `unregisterMarker()`.
+     */
     registerMarker: function (marker) {
         const record = this.registry.add({
             name: marker.name,
@@ -80,14 +125,24 @@ AFRAME.registerSystem('arnft', {
         return record;
     },
 
-    // Called by nft-anchor components when they are removed. jsartoolkitNFT
-    // cannot unload a marker, so its target stays loaded and is reused if an
-    // <a-nft> with the same url is added again.
+    /**
+     * Unregister a target. Called by `nft-anchor` components when they are
+     * removed. jsartoolkitNFT cannot unload a marker, so the target stays
+     * loaded and is reused if an `<a-nft>` with the same url is added again.
+     *
+     * @param {import('./markerRegistry').MarkerRecord|null} record The record
+     *     from `registerMarker()`. Unknown or `null` records are ignored.
+     */
     unregisterMarker: function (record) {
         this.registry.remove(record);
     },
 
-    // Start the tracker once the camera is live and at least one marker exists.
+    /**
+     * Create the tracker once the camera is live and at least one target is
+     * registered. Safe to call repeatedly.
+     *
+     * @private
+     */
     _maybeStart: function () {
         if (
             this.starting ||
@@ -109,6 +164,13 @@ AFRAME.registerSystem('arnft', {
             });
     },
 
+    /**
+     * The tracker is ready: apply its projection and detection settings, route
+     * its poses to the components, and load the registered targets.
+     *
+     * @param {import('@webarkit/jsartoolkit-nft').ARControllerNFT} ar
+     * @private
+     */
     _onControllerReady: function (ar) {
         this.controller = ar;
         this._setupCamera();
@@ -133,8 +195,12 @@ AFRAME.registerSystem('arnft', {
         this._loadPendingMarkers();
     },
 
-    // Hand every marker that is not loaded yet to the tracker, one call per
-    // marker. Safe to call at any time — see markerLoader.js.
+    /**
+     * Hand every target that is not loaded yet to the tracker, one call per
+     * target. Safe to call at any time; see `markerLoader.js`.
+     *
+     * @private
+     */
     _loadPendingMarkers: function () {
         const ar = this.controller;
         if (!ar) {
@@ -151,14 +217,20 @@ AFRAME.registerSystem('arnft', {
         });
     },
 
-    // Compute and store the tracker's projection matrix for the a-camera.
-    //
-    // getCameraMatrix() targets the full pw x ph processing canvas, but the video
-    // content is drawn letterboxed at w x h inside it. Scale by pw/w (x) and ph/h
-    // (y) to undo that padding, giving the intrinsic projection at the video's true
-    // aspect. No further aspect fudging: alignment is handled by sizing the render
-    // canvas to the same box as the video (see _resize) — the AR.js approach — so
-    // the overlay matches the video by construction, for any camera_para.
+    /**
+     * Compute and store the tracker's projection matrix for the A-Frame camera.
+     *
+     * `getCameraMatrix()` targets the full `pw` × `ph` processing canvas, but
+     * the video content is drawn letterboxed at `w` × `h` inside it. Scaling by
+     * `pw / w` (x) and `ph / h` (y) undoes that padding, giving the intrinsic
+     * projection at the video's true aspect.
+     *
+     * No further aspect correction is needed. Alignment comes from sizing the
+     * render canvas to the same box as the video (see `_resize`), the AR.js
+     * approach, so the overlay matches the video for any `camera_para`.
+     *
+     * @private
+     */
     _setupCamera: function () {
         const cameraEle =
             this.el.querySelector('a-camera') || this.el.querySelector('[camera]');
@@ -187,17 +259,30 @@ AFRAME.registerSystem('arnft', {
         this._applyProjection();
     },
 
+    /**
+     * Write the stored projection into the A-Frame camera. Called every frame,
+     * because A-Frame recomputes the projection on resize.
+     *
+     * @private
+     */
     _applyProjection: function () {
         const camera = this.arCamera;
         camera.projectionMatrix.fromArray(this.projArray);
         camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
     },
 
-    // Size the video AND the render canvas to the same "cover" box: source aspect,
-    // scaled to fill the window, overflow hidden via negative margins. Because both
-    // elements share the exact box, and the renderer draws at that box, the raw
-    // projection maps 3D onto the same pixels as the video — no stretch, no shift.
-    // Mirrors AR.js ArToolkitSource.onResizeElement + copyElementSizeTo.
+    /**
+     * Size the video AND the render canvas to the same "cover" box: the source
+     * aspect, scaled to fill the window, with the overflow hidden by negative
+     * margins. Both elements share the exact box and the renderer draws at that
+     * box, so the raw projection maps 3D onto the same pixels as the video, with
+     * no stretch and no shift.
+     *
+     * Mirrors AR.js `ArToolkitSource.onResizeElement` + `copyElementSizeTo`.
+     * Runs every frame but only touches the DOM when the box changes.
+     *
+     * @private
+     */
     _resize: function () {
         const video = this.video;
         const canvas = this.el.canvas;
@@ -252,9 +337,12 @@ AFRAME.registerSystem('arnft', {
         this.el.renderer.setSize(boxW, boxH, false);
     },
 
-    // Drive one detection pass per frame, then expire markers that stopped
-    // being seen. process() reads the cropped camera frame; matches fire the
-    // getNFTMarker listener above.
+    /**
+     * Per frame: keep the layout and projection in sync, run one detection and
+     * tracking pass, then hide the targets that stopped being seen.
+     * `process()` reads the processing frame; each tracked target fires the
+     * `getNFTMarker` listener registered in `_onControllerReady`.
+     */
     tick: function () {
         if (!this.controller || !this.videoReady) {
             return;
@@ -271,10 +359,25 @@ AFRAME.registerSystem('arnft', {
     },
 });
 
+/**
+ * `nft-anchor` component: anchors its entity, and the content inside it, to one
+ * NFT target. Usually used through the `<a-nft>` primitive.
+ *
+ * Each pose goes through the following steps:
+ * 1. optional 1€ smoothing;
+ * 2. the post-matrix: centring on the target (real size, DPI → mm), then the
+ *    lift onto the plane, then `scaleFactor`;
+ * 3. the result is written to the entity's matrix in `tick()`.
+ *
+ * The content is hidden when the target is lost or the component is removed.
+ */
 AFRAME.registerComponent('nft-anchor', {
     dependencies: ['arnft'],
     schema: {
+        // Label for the target, used in console messages (`<a-nft name>`).
         entityName: { type: 'string', default: 'pinball' },
+        // Descriptor-set path without extension (`<a-nft url>`), resolved
+        // against the page. The default only suits the bundled example.
         markerUrl: { type: 'string', default: 'DataNFT/pinball' },
         // Uniform scale for the mesh geometry (pose units are millimetres, so a
         // bare 1-unit primitive is tiny). Does not affect the centering offset.
@@ -294,6 +397,7 @@ AFRAME.registerComponent('nft-anchor', {
         smoothBeta: { type: 'number', default: 0.01 },
     },
 
+    /** Set up pose state and register the target with the `arnft` system. */
     init: function () {
         this.mesh = this.el.object3D;
         this.postMatrix = new AFRAME.THREE.Matrix4();
@@ -308,12 +412,15 @@ AFRAME.registerComponent('nft-anchor', {
         });
     },
 
-    // The entity was removed or detached, or nft-anchor was removed from it:
-    // stop routing poses to it. No pose and no onLost will arrive after this,
-    // so hide the mesh now rather than leave it frozen at its last pose.
-    //
-    // A-Frame does not re-run init() when the same element is appended again,
-    // so a removed <a-nft> is not tracked again — create a new element instead.
+    /**
+     * The entity was removed or detached, or `nft-anchor` was removed from it:
+     * stop routing poses to it. No pose and no `onLost` will arrive after this,
+     * so the mesh is hidden now rather than left frozen at its last pose.
+     *
+     * A-Frame does not re-run `init()` when the same element is appended again,
+     * so a removed `<a-nft>` is not tracked again; create a new element instead
+     * (webarkit/Aframe-nft#15).
+     */
     remove: function () {
         this.el.sceneEl.systems.arnft.unregisterMarker(this.marker);
         this.marker = null;
@@ -321,8 +428,11 @@ AFRAME.registerComponent('nft-anchor', {
         this.latestMatrix = null;
     },
 
-    // Recompose / rebuild when a tunable changes at runtime (scaleFactor, offsets,
-    // smoothing params).
+    /**
+     * Rebuild the filter and the post-matrix when a tunable changes at runtime:
+     * `scaleFactor`, `lift`, the offsets or the smoothing parameters. A change
+     * of `markerUrl` is not handled (webarkit/Aframe-nft#15).
+     */
     update: function () {
         this._buildFilter();
         if (this.markerData) {
@@ -330,21 +440,39 @@ AFRAME.registerComponent('nft-anchor', {
         }
     },
 
+    /**
+     * (Re)create the 1€ filter from the smoothing properties, or drop it when
+     * `smooth` is false.
+     *
+     * @private
+     */
     _buildFilter: function () {
         this.filter = this.data.smooth
-            ? new OneEuroFilter({
+            ? new PoseFilter({
                   minCutoff: this.data.smoothMinCutoff,
                   beta: this.data.smoothBeta,
               })
             : null;
     },
 
-    // Marker metadata (real-world size + dpi) arrived — compose the post-matrix.
+    /**
+     * The target has loaded. Called by the `arnft` system with the target's
+     * size, which fixes the centring offset.
+     *
+     * @param {import('./markerRegistry').NFTData} data
+     */
     onData: function (data) {
         this.markerData = data;
         this._composePostMatrix();
     },
 
+    /**
+     * Build the post-matrix applied after each pose: centre the content on the
+     * target, lift it onto the plane when `lift` is set, and scale it by
+     * `scaleFactor`.
+     *
+     * @private
+     */
     _composePostMatrix: function () {
         const data = this.markerData;
         const offset = computeCenterOffset(data.width, data.height, data.dpi);
@@ -364,9 +492,13 @@ AFRAME.registerComponent('nft-anchor', {
         this.postMatrix.compose(position, quaternion, scale);
     },
 
-    // Bounding box of the child mesh(es) expressed in this anchor's local frame
-    // (i.e. before the postMatrix scale is applied). Returns null if no geometry
-    // has loaded yet.
+    /**
+     * Bounding box of the child meshes in this anchor's local frame, i.e.
+     * before the post-matrix scale is applied.
+     *
+     * @returns {THREE.Box3|null} `null` if no geometry has loaded yet.
+     * @private
+     */
     _getLocalBBox: function () {
         const anchor = this.el.object3D;
         const box = new AFRAME.THREE.Box3();
@@ -399,7 +531,13 @@ AFRAME.registerComponent('nft-anchor', {
         return found ? box : null;
     },
 
-    // New pose for this marker: RH matrix -> centered model matrix, cached for tick.
+    /**
+     * A new pose for this target. Called by the `arnft` system on every frame
+     * in which the target is tracked. The right-handed pose is smoothed,
+     * combined with the post-matrix, and cached for `tick()`.
+     *
+     * @param {ArrayLike<number>} matrixGL_RH 4×4 pose matrix from jsartoolkitNFT.
+     */
     onPose: function (matrixGL_RH) {
         let elements = toMatrixElements(matrixGL_RH);
         if (elements === null) {
@@ -416,6 +554,10 @@ AFRAME.registerComponent('nft-anchor', {
         this.mesh.visible = true;
     },
 
+    /**
+     * The target went out of view (unseen for `lostTimeout` ms). Called by the
+     * `arnft` system once per loss.
+     */
     onLost: function () {
         this.mesh.visible = false;
         // Start fresh on re-acquisition so the mesh doesn't ease in from a stale pose.
@@ -424,6 +566,11 @@ AFRAME.registerComponent('nft-anchor', {
         }
     },
 
+    /**
+     * Apply the latest pose. The matrix is set directly, so the entity's
+     * `position` / `rotation` / `scale` attributes are ignored once tracking
+     * starts.
+     */
     tick: function () {
         if (this.latestMatrix === null) {
             return;
@@ -433,6 +580,11 @@ AFRAME.registerComponent('nft-anchor', {
     },
 });
 
+/**
+ * `<a-nft url="…" name="…">`: an entity with `nft-anchor`. `url` maps to
+ * `nft-anchor.markerUrl` and `name` to `nft-anchor.entityName`. Its children are
+ * the content anchored to the target.
+ */
 AFRAME.registerPrimitive('a-nft', AFRAME.utils.extendDeep({}, AFRAME.primitives.getMeshMixin(), {
     defaultComponents: {
         'nft-anchor': {},

@@ -33,11 +33,12 @@
   "homepage": "https://github.com/webarkit/Aframe-nft#readme",
   "dependencies": {
     "@webarkit/jsartoolkit-nft": "1.13.0",
-    "aframe": "1.7.1"
+    "@webarkit/oneeurofilter-ts": "0.2.0",
+    "aframe": "1.8.0"
   },
   "devDependencies": {
-    "jsdom": "^25.0.1",
-    "vite": "^6.0.0",
-    "vitest": "^3.2.6"
+    "jsdom": "^30.1.1",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
   }
 }

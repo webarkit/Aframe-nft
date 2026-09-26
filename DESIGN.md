@@ -1,8 +1,11 @@
 # Aframe-nft — Design & Improvement Plan
 
-> Status: **Design (brainstorming)** — not yet implemented.
-> Produced with the `brainstorming` + `clean-code` skills.
-> Date: 2026-07-01
+> Status: **Implemented.** Phase 2 (jsartoolkitNFT + Vite) is the current codebase; multi-target
+> tracking and runtime-added targets followed with jsartoolkitNFT 1.13.0 (section 10).
+> This document keeps the design history and the reasons behind the decisions. Sections 1–9
+> describe the plan as written on 2026-07-01, so parts of them (for example "single marker
+> per scene") have since been superseded. For how to *use* the library, see the
+> [README](README.md).
 
 ## 1. Understanding Summary
 
@@ -165,7 +168,9 @@ Decisions made during Phase 2 (see also Decision Log):
   prototyped and removed — they only masked the mismatch.
 - ✅ **Pose smoothing (`OneEuroFilter`) — done.** Optional 1€ filter on the pose matrix,
   exposed via `smooth` / `smoothMinCutoff` / `smoothBeta` on `nft-anchor` (on by default).
-  Implemented as a tested module (`src/oneEuroFilter.js`).
+  First implemented in-house; now `src/poseFilter.js` wraps WebARKit's
+  `@webarkit/oneeurofilter-ts`, converting the Hz cutoffs to the package's per-millisecond
+  units. `test/poseFilter.test.js` pins that the smoothing is unchanged.
 - ✅ **Multi-marker — `<a-nft>` per target, visibility derived locally.** Several `<a-nft>`
   elements each anchor their own target. Three upstream constraints originally shaped this;
   **jsartoolkitNFT 1.13.0 lifts all three**:
