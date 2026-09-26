@@ -22,6 +22,7 @@ import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
 import { PoseFilter } from './poseFilter';
 import { MarkerRegistry } from './markerRegistry';
 import { loadPendingMarkers } from './markerLoader';
+import { DEFAULT_LOG_LEVEL, LOG_LEVEL_NAMES, toARLogLevel } from './logLevel';
 
 /**
  * Resolve a marker or camera path against the HTML page, like any other asset
@@ -64,6 +65,12 @@ AFRAME.registerSystem('arnft', {
         // target entering the view is not found.
         continuousDetection: { type: 'boolean', default: true },
         detectionInterval: { type: 'number', default: 300 },
+        // Verbosity of ARToolKit's console lines ("[info] Tracked page 0" and
+        // the like, printed on every frame at info): debug, info, warn or
+        // error. It does not reach jsartoolkitNFT's start-up lines, which print
+        // before it can be applied, nor its "webarkit-info" lines
+        // (webarkit/jsartoolkitNFT#677).
+        logLevel: { type: 'string', default: DEFAULT_LOG_LEVEL, oneOf: LOG_LEVEL_NAMES },
     },
 
     /**
@@ -173,6 +180,8 @@ AFRAME.registerSystem('arnft', {
      */
     _onControllerReady: function (ar) {
         this.controller = ar;
+        // First, so everything ARToolKit logs from here on follows it.
+        ar.setLogLevel(toARLogLevel(this.data.logLevel));
         this._setupCamera();
 
         // jsartoolkitNFT 1.13.0 tracks every loaded marker at once; these set
@@ -403,7 +412,8 @@ AFRAME.registerComponent('nft-anchor', {
         this.postMatrix = new AFRAME.THREE.Matrix4();
         this.latestMatrix = null;
         this.markerData = null;
-        this._buildFilter();
+        // Built by the first update(), which A-Frame runs right after init().
+        this.filter = null;
 
         this.marker = this.el.sceneEl.systems.arnft.registerMarker({
             name: this.data.entityName,
@@ -429,12 +439,24 @@ AFRAME.registerComponent('nft-anchor', {
     },
 
     /**
-     * Rebuild the filter and the post-matrix when a tunable changes at runtime:
-     * `scaleFactor`, `lift`, the offsets or the smoothing parameters. A change
-     * of `markerUrl` is not handled (webarkit/Aframe-nft#15).
+     * Apply property changes: the first call after `init()`, then any runtime
+     * change of `scaleFactor`, `lift`, the offsets or the smoothing parameters.
+     * A change of `markerUrl` is not handled (webarkit/Aframe-nft#15).
+     *
+     * The filter is rebuilt only when its own properties change. Rebuilding
+     * resets the smoothing state, and `@webarkit/oneeurofilter-ts` logs a line
+     * per construction.
+     *
+     * @param {object} oldData Previous property values; `{}` on the first call.
      */
-    update: function () {
-        this._buildFilter();
+    update: function (oldData) {
+        if (
+            this.data.smooth !== oldData.smooth ||
+            this.data.smoothMinCutoff !== oldData.smoothMinCutoff ||
+            this.data.smoothBeta !== oldData.smoothBeta
+        ) {
+            this._buildFilter();
+        }
         if (this.markerData) {
             this._composePostMatrix();
         }

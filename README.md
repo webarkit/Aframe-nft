@@ -216,9 +216,12 @@ exact target in [webarkit/jsfeatNext#142](https://github.com/webarkit/jsfeatNext
 | `lostTimeout` | number | `200` | How long (ms) a target may go unseen before its content is hidden |
 | `continuousDetection` | boolean | `true` | Keep looking for untracked targets while others are tracked. `false` is cheapest, but a second target entering the view is then not found |
 | `detectionInterval` | number | `300` | Minimum time (ms) between searches for untracked targets while others are tracked; `0` searches every frame |
+| `logLevel` | string | `warn` | Tracker console verbosity: `debug`, `info`, `warn` or `error`. `info` adds ARToolKit's per-frame tracking lines (`[info] Tracked page 0` …), useful when debugging detection |
 
-`continuousDetection` and `detectionInterval` are read once, when tracking starts
-([#13](https://github.com/webarkit/Aframe-nft/issues/13)).
+`continuousDetection`, `detectionInterval` and `logLevel` are read once, when tracking starts
+([#13](https://github.com/webarkit/Aframe-nft/issues/13)). `logLevel` does not reach
+jsartoolkitNFT's start-up lines or its `webarkit-info` lines
+([webarkit/jsartoolkitNFT#677](https://github.com/webarkit/jsartoolkitNFT/issues/677)).
 
 ### `<a-nft>` primitive — the `nft-anchor` component
 
@@ -245,7 +248,20 @@ The remaining properties are set through the component, for example
 
 The content is centred on the target automatically, using the target's real-world size.
 
+### Version
+
+At start-up the bundle logs its version, right after A-Frame's own lines:
+
+```
+Aframe-nft 0.1.0 (jsartoolkitNFT 1.13.0)
+```
+
+The same version is available from code as `AframeNft.version`.
+
 ## Troubleshooting 🩺
+
+When reporting a problem, include the `Aframe-nft …` line from the console. It identifies the
+build and the jsartoolkitNFT version inside it.
 
 **`arnft: camera init failed` in the console**
 
@@ -259,6 +275,14 @@ The content is centred on the target automatically, using the target's real-worl
 - check that `url` has **no** extension and that the path resolves relative to the page (the
   Network tab shows the 404s);
 - a page can hold at most 20 targets.
+
+**`404 (Not Found)` errors for `….zft` at start-up.** These are expected, one per target. They
+are harmless as long as no `arnft: failed to load NFT marker` error follows.
+- Before loading a target's `.fset` / `.iset` / `.fset3` files, jsartoolkitNFT checks whether a
+  compressed `.zft` version exists next to them, and falls back to the three files when it does
+  not.
+- The browser logs the failed check as an error.
+- See [webarkit/jsartoolkitNFT#676](https://github.com/webarkit/jsartoolkitNFT/issues/676).
 
 **The target is not detected.**
 - Use good, even lighting.
@@ -312,13 +336,15 @@ flowchart LR
 
 | Module | Responsibility |
 |--------|----------------|
-| [`src/index.js`](src/index.js) | Entry point: importing it registers everything |
+| [`src/index.js`](src/index.js) | Entry point: importing it registers everything, logs the version banner and exports `version` |
 | [`src/registerNFT.js`](src/registerNFT.js) | A-Frame glue: the `arnft` system, the `nft-anchor` component, the `<a-nft>` primitive |
 | [`src/cameraViewRenderer.js`](src/cameraViewRenderer.js) | Camera stream and processing frames |
 | [`src/markerRegistry.js`](src/markerRegistry.js) | Target bookkeeping: load state, visibility, reusable ids |
 | [`src/markerLoader.js`](src/markerLoader.js) | Loads descriptor sets into the tracker |
 | [`src/nftMath.js`](src/nftMath.js) | Pose geometry: centring, lift, matrix normalisation |
 | [`src/poseFilter.js`](src/poseFilter.js) | 1€ pose smoothing, on top of [`@webarkit/oneeurofilter-ts`](https://github.com/webarkit/OneEuroFilter-ts) |
+| [`src/version.js`](src/version.js) | Version and start-up banner, injected from `package.json` at build time |
+| [`src/logLevel.js`](src/logLevel.js) | Maps the `logLevel` attribute to jsartoolkitNFT's `ARLogLevel` |
 
 Design history and the reasons behind these choices are in [DESIGN.md](DESIGN.md).
 
