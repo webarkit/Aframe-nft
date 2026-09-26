@@ -403,7 +403,8 @@ AFRAME.registerComponent('nft-anchor', {
         this.postMatrix = new AFRAME.THREE.Matrix4();
         this.latestMatrix = null;
         this.markerData = null;
-        this._buildFilter();
+        // Built by the first update(), which A-Frame runs right after init().
+        this.filter = null;
 
         this.marker = this.el.sceneEl.systems.arnft.registerMarker({
             name: this.data.entityName,
@@ -429,12 +430,24 @@ AFRAME.registerComponent('nft-anchor', {
     },
 
     /**
-     * Rebuild the filter and the post-matrix when a tunable changes at runtime:
-     * `scaleFactor`, `lift`, the offsets or the smoothing parameters. A change
-     * of `markerUrl` is not handled (webarkit/Aframe-nft#15).
+     * Apply property changes: the first call after `init()`, then any runtime
+     * change of `scaleFactor`, `lift`, the offsets or the smoothing parameters.
+     * A change of `markerUrl` is not handled (webarkit/Aframe-nft#15).
+     *
+     * The filter is rebuilt only when its own properties change. Rebuilding
+     * resets the smoothing state, and `@webarkit/oneeurofilter-ts` logs a line
+     * per construction.
+     *
+     * @param {object} oldData Previous property values; `{}` on the first call.
      */
-    update: function () {
-        this._buildFilter();
+    update: function (oldData) {
+        if (
+            this.data.smooth !== oldData.smooth ||
+            this.data.smoothMinCutoff !== oldData.smoothMinCutoff ||
+            this.data.smoothBeta !== oldData.smoothBeta
+        ) {
+            this._buildFilter();
+        }
         if (this.markerData) {
             this._composePostMatrix();
         }

@@ -15,7 +15,12 @@
 export const version =
     typeof __AFRAME_NFT_VERSION__ !== 'undefined' ? __AFRAME_NFT_VERSION__ : 'unknown';
 
-/** Version of the bundled jsartoolkitNFT, which does not log its own. */
+/**
+ * Version of the bundled jsartoolkitNFT. jsartoolkitNFT logs it too
+ * (`ARToolkitNFT <version>`), but only once the tracker starts, i.e. once the
+ * camera works. Having it in the banner means it is logged at load, even when
+ * the camera fails.
+ */
 export const jsartoolkitNFTVersion =
     typeof __JSARTOOLKIT_NFT_VERSION__ !== 'undefined' ? __JSARTOOLKIT_NFT_VERSION__ : 'unknown';
 
