@@ -245,7 +245,20 @@ The remaining properties are set through the component, for example
 
 The content is centred on the target automatically, using the target's real-world size.
 
+### Version
+
+At start-up the bundle logs its version, right after A-Frame's own lines:
+
+```
+Aframe-nft 0.1.0 (jsartoolkitNFT 1.13.0)
+```
+
+The same version is available from code as `AframeNft.version`.
+
 ## Troubleshooting 🩺
+
+When reporting a problem, include the `Aframe-nft …` line from the console. It identifies the
+build and the jsartoolkitNFT version inside it.
 
 **`arnft: camera init failed` in the console**
 
@@ -312,13 +325,14 @@ flowchart LR
 
 | Module | Responsibility |
 |--------|----------------|
-| [`src/index.js`](src/index.js) | Entry point: importing it registers everything |
+| [`src/index.js`](src/index.js) | Entry point: importing it registers everything, logs the version banner and exports `version` |
 | [`src/registerNFT.js`](src/registerNFT.js) | A-Frame glue: the `arnft` system, the `nft-anchor` component, the `<a-nft>` primitive |
 | [`src/cameraViewRenderer.js`](src/cameraViewRenderer.js) | Camera stream and processing frames |
 | [`src/markerRegistry.js`](src/markerRegistry.js) | Target bookkeeping: load state, visibility, reusable ids |
 | [`src/markerLoader.js`](src/markerLoader.js) | Loads descriptor sets into the tracker |
 | [`src/nftMath.js`](src/nftMath.js) | Pose geometry: centring, lift, matrix normalisation |
 | [`src/poseFilter.js`](src/poseFilter.js) | 1€ pose smoothing, on top of [`@webarkit/oneeurofilter-ts`](https://github.com/webarkit/OneEuroFilter-ts) |
+| [`src/version.js`](src/version.js) | Version and start-up banner, injected from `package.json` at build time |
 
 Design history and the reasons behind these choices are in [DESIGN.md](DESIGN.md).
 
