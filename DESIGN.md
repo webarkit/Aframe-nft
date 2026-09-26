@@ -1,8 +1,11 @@
 # Aframe-nft — Design & Improvement Plan
 
-> Status: **Design (brainstorming)** — not yet implemented.
-> Produced with the `brainstorming` + `clean-code` skills.
-> Date: 2026-07-01
+> Status: **Implemented.** Phase 2 (jsartoolkitNFT + Vite) is the current codebase; multi-target
+> tracking and runtime-added targets followed with jsartoolkitNFT 1.13.0 (section 10).
+> This document keeps the design history and the reasons behind the decisions. Sections 1–9
+> describe the plan as written on 2026-07-01, so parts of them (for example "single marker
+> per scene") have since been superseded. For how to *use* the library, see the
+> [README](README.md).
 
 ## 1. Understanding Summary
 
