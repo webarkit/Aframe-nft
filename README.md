@@ -268,13 +268,13 @@ it on the plane instead.
 
 ```mermaid
 flowchart LR
-    CAM[camera] --> VIDEO["video element (id=video)"]
-    VIDEO --> CVR[cameraViewRenderer<br/>320×240 frames]
-    CVR --> ARC[ARControllerNFT<br/>jsartoolkitNFT]
-    subgraph SYS [arnft system]
+    CAM["camera"] --> VIDEO["video element (id=video)"]
+    VIDEO --> CVR["cameraViewRenderer<br/>320×240 frames"]
+    CVR --> ARC["ARControllerNFT<br/>jsartoolkitNFT"]
+    subgraph SYS ["arnft system"]
         ARC
-        REG[MarkerRegistry]
-        LOAD[markerLoader]
+        REG["MarkerRegistry"]
+        LOAD["markerLoader"]
     end
     NFT["a-nft (nft-anchor)"] -- registerMarker --> REG
     LOAD -- loadNFTMarker --> ARC
