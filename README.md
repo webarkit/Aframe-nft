@@ -309,7 +309,7 @@ flowchart LR
 | [`src/markerRegistry.js`](src/markerRegistry.js) | Target bookkeeping: load state, visibility, reusable ids |
 | [`src/markerLoader.js`](src/markerLoader.js) | Loads descriptor sets into the tracker |
 | [`src/nftMath.js`](src/nftMath.js) | Pose geometry: centring, lift, matrix normalisation |
-| [`src/oneEuroFilter.js`](src/oneEuroFilter.js) | 1€ pose smoothing |
+| [`src/poseFilter.js`](src/poseFilter.js) | 1€ pose smoothing, on top of [`@webarkit/oneeurofilter-ts`](https://github.com/webarkit/OneEuroFilter-ts) |
 
 Design history and the reasons behind these choices are in [DESIGN.md](DESIGN.md).
 
@@ -355,8 +355,8 @@ See the [open issues](https://github.com/webarkit/Aframe-nft/issues) for the ful
   tracking.
 - [A-Frame](https://aframe.io/): the WebXR framework this builds on.
 - [AR.js](https://github.com/AR-js-org/AR.js): the video/canvas alignment approach.
-- The [1€ filter](https://gery.casiez.net/1euro/) (Casiez, Roussel and Vogel, CHI 2012): pose
-  smoothing.
+- The [1€ filter](https://gery.casiez.net/1euro/) (Casiez, Roussel and Vogel, CHI 2012), via
+  WebARKit's [OneEuroFilter-ts](https://github.com/webarkit/OneEuroFilter-ts): pose smoothing.
 
 ## License 📄
 

@@ -33,6 +33,7 @@
   "homepage": "https://github.com/webarkit/Aframe-nft#readme",
   "dependencies": {
     "@webarkit/jsartoolkit-nft": "1.13.0",
+    "@webarkit/oneeurofilter-ts": "0.2.0",
     "aframe": "1.7.1"
   },
   "devDependencies": {

@@ -19,7 +19,7 @@ import 'aframe';
 import { ARControllerNFT } from '@webarkit/jsartoolkit-nft';
 import { cameraViewRenderer } from './cameraViewRenderer';
 import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
-import { OneEuroFilter } from './oneEuroFilter';
+import { PoseFilter } from './poseFilter';
 import { MarkerRegistry } from './markerRegistry';
 import { loadPendingMarkers } from './markerLoader';
 
@@ -448,7 +448,7 @@ AFRAME.registerComponent('nft-anchor', {
      */
     _buildFilter: function () {
         this.filter = this.data.smooth
-            ? new OneEuroFilter({
+            ? new PoseFilter({
                   minCutoff: this.data.smoothMinCutoff,
                   beta: this.data.smoothBeta,
               })
