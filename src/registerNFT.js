@@ -22,6 +22,7 @@ import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
 import { PoseFilter } from './poseFilter';
 import { MarkerRegistry } from './markerRegistry';
 import { loadPendingMarkers } from './markerLoader';
+import { DEFAULT_LOG_LEVEL, LOG_LEVEL_NAMES, toARLogLevel } from './logLevel';
 
 /**
  * Resolve a marker or camera path against the HTML page, like any other asset
@@ -64,6 +65,12 @@ AFRAME.registerSystem('arnft', {
         // target entering the view is not found.
         continuousDetection: { type: 'boolean', default: true },
         detectionInterval: { type: 'number', default: 300 },
+        // Verbosity of ARToolKit's console lines ("[info] Tracked page 0" and
+        // the like, printed on every frame at info): debug, info, warn or
+        // error. It does not reach jsartoolkitNFT's start-up lines, which print
+        // before it can be applied, nor its "webarkit-info" lines
+        // (webarkit/jsartoolkitNFT#677).
+        logLevel: { type: 'string', default: DEFAULT_LOG_LEVEL, oneOf: LOG_LEVEL_NAMES },
     },
 
     /**
@@ -173,6 +180,8 @@ AFRAME.registerSystem('arnft', {
      */
     _onControllerReady: function (ar) {
         this.controller = ar;
+        // First, so everything ARToolKit logs from here on follows it.
+        ar.setLogLevel(toARLogLevel(this.data.logLevel));
         this._setupCamera();
 
         // jsartoolkitNFT 1.13.0 tracks every loaded marker at once; these set

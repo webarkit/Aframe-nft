@@ -216,9 +216,12 @@ exact target in [webarkit/jsfeatNext#142](https://github.com/webarkit/jsfeatNext
 | `lostTimeout` | number | `200` | How long (ms) a target may go unseen before its content is hidden |
 | `continuousDetection` | boolean | `true` | Keep looking for untracked targets while others are tracked. `false` is cheapest, but a second target entering the view is then not found |
 | `detectionInterval` | number | `300` | Minimum time (ms) between searches for untracked targets while others are tracked; `0` searches every frame |
+| `logLevel` | string | `warn` | Tracker console verbosity: `debug`, `info`, `warn` or `error`. `info` adds ARToolKit's per-frame tracking lines (`[info] Tracked page 0` …), useful when debugging detection |
 
-`continuousDetection` and `detectionInterval` are read once, when tracking starts
-([#13](https://github.com/webarkit/Aframe-nft/issues/13)).
+`continuousDetection`, `detectionInterval` and `logLevel` are read once, when tracking starts
+([#13](https://github.com/webarkit/Aframe-nft/issues/13)). `logLevel` does not reach
+jsartoolkitNFT's start-up lines or its `webarkit-info` lines
+([webarkit/jsartoolkitNFT#677](https://github.com/webarkit/jsartoolkitNFT/issues/677)).
 
 ### `<a-nft>` primitive — the `nft-anchor` component
 
@@ -341,6 +344,7 @@ flowchart LR
 | [`src/nftMath.js`](src/nftMath.js) | Pose geometry: centring, lift, matrix normalisation |
 | [`src/poseFilter.js`](src/poseFilter.js) | 1€ pose smoothing, on top of [`@webarkit/oneeurofilter-ts`](https://github.com/webarkit/OneEuroFilter-ts) |
 | [`src/version.js`](src/version.js) | Version and start-up banner, injected from `package.json` at build time |
+| [`src/logLevel.js`](src/logLevel.js) | Maps the `logLevel` attribute to jsartoolkitNFT's `ARLogLevel` |
 
 Design history and the reasons behind these choices are in [DESIGN.md](DESIGN.md).
 
