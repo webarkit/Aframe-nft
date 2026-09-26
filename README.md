@@ -6,7 +6,7 @@
 [![GitHub forks](https://img.shields.io/github/forks/webarkit/Aframe-nft?style=flat&logo=github)](https://github.com/webarkit/Aframe-nft/network/members)
 [![GitHub issues](https://img.shields.io/github/issues/webarkit/Aframe-nft)](https://github.com/webarkit/Aframe-nft/issues)
 [![Last commit](https://img.shields.io/github/last-commit/webarkit/Aframe-nft)](https://github.com/webarkit/Aframe-nft/commits)
-[![A-Frame 1.7.1](https://img.shields.io/badge/A--Frame-1.7.1-ef2d5e.svg)](https://aframe.io)
+[![A-Frame 1.8.0](https://img.shields.io/badge/A--Frame-1.8.0-ef2d5e.svg)](https://aframe.io)
 [![jsartoolkitNFT 1.13.0](https://img.shields.io/badge/jsartoolkitNFT-1.13.0-2a6ebb.svg)](https://github.com/webarkit/jsartoolkitNFT)
 
 A-Frame components for markerless AR with **NFT (Natural Feature Tracking)** image targets,
@@ -78,7 +78,7 @@ on a screen.
 
 **Get the bundle.** Until the npm package is published, which is planned soon, build
 `dist/AframeNft.js` with `npm run build` or copy the one committed in this repository. It is a
-single script that **already contains A-Frame (1.7.1) and jsartoolkitNFT**, so do not load
+single script that **already contains A-Frame (1.8.0) and jsartoolkitNFT**, so do not load
 A-Frame separately.
 
 A page needs four things:

@@ -34,7 +34,7 @@
   "dependencies": {
     "@webarkit/jsartoolkit-nft": "1.13.0",
     "@webarkit/oneeurofilter-ts": "0.2.0",
-    "aframe": "1.7.1"
+    "aframe": "1.8.0"
   },
   "devDependencies": {
     "jsdom": "^30.1.1",
