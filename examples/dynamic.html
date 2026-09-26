@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Aframe-nft dynamic example</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=0.5, maximum-scale=1"/>
+    <link rel="stylesheet" href="css/nft-style.css"/>
+    <style>
+        #toggle {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 200;
+            padding: 8px 12px;
+            font: 16px sans-serif;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <video autoplay muted playsinline id="video"></video>
+</div>
+<button id="toggle" type="button">Add kuva</button>
+<script type="module" src="../src/index.js"></script>
+<div class="example-container">
+    <a-scene embedded arnft="videoWidth: 640; videoHeight: 480">
+
+        <!-- pinball is declared up front. kuva is added and removed at runtime
+             with the button: it loads while tracking is already running, and
+             re-adding it reuses the target that is still loaded. -->
+        <a-nft name="pinball" url="DataNFT/pinball">
+            <a-box color="#4CC3D9"></a-box>
+        </a-nft>
+
+        <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    </a-scene>
+</div>
+<script>
+    const button = document.getElementById('toggle');
+    let kuva = null;
+
+    button.addEventListener('click', () => {
+        if (kuva) {
+            kuva.remove();
+            kuva = null;
+            button.textContent = 'Add kuva';
+            return;
+        }
+        kuva = document.createElement('a-nft');
+        kuva.setAttribute('name', 'kuva');
+        kuva.setAttribute('url', 'DataNFT/kuva');
+        kuva.innerHTML = '<a-sphere color="#E4572E"></a-sphere>';
+        document.querySelector('a-scene').appendChild(kuva);
+        button.textContent = 'Remove kuva';
+    });
+</script>
+</body>
+</html>

@@ -1,8 +1,11 @@
 # Aframe-nft — Design & Improvement Plan
 
-> Status: **Design (brainstorming)** — not yet implemented.
-> Produced with the `brainstorming` + `clean-code` skills.
-> Date: 2026-07-01
+> Status: **Implemented.** Phase 2 (jsartoolkitNFT + Vite) is the current codebase; multi-target
+> tracking and runtime-added targets followed with jsartoolkitNFT 1.13.0 (section 10).
+> This document keeps the design history and the reasons behind the decisions. Sections 1–9
+> describe the plan as written on 2026-07-01, so parts of them (for example "single marker
+> per scene") have since been superseded. For how to *use* the library, see the
+> [README](README.md).
 
 ## 1. Understanding Summary
 
@@ -146,11 +149,52 @@ Decisions made during Phase 2 (see also Decision Log):
 
 ## 10. Known Items / Future Work
 
-- **Cube "lean" (cosmetic, deferred):** the mesh rests on the marker (lifted by half its
-  height), so a tall mesh shows correct perspective parallax that can read as a shift when
-  viewed at an angle. Placement/rotation are correct. Options to revisit: shorter/flatter
-  demo mesh, make the lift optional, or don't auto-lift and let users position content.
-- **Smoothing (`OneEuroFilter`) not yet ported** — raw pose is used. Add an optional
-  `smoothing`/`confidence` attribute if jitter is a problem in practice.
-- Worker-based detection (Approach A) as a perf optimization.
-- Confidence-threshold and smoothing defaults to be tuned empirically.
+- ✅ **Mesh lift — now correct + optional.** The mesh is lifted by its real bounding-box
+  height (works for any mesh, not just a unit cube) via `computeLiftZ`; a `lift` attribute
+  (default true) can disable it to center the mesh on the plane. Any residual "lean" on a
+  tall mesh is correct perspective parallax.
+- ✅ **Constant overlay shift — RESOLVED: it was a mis-printed marker, not our code.**
+  The overlay drifted right by a constant amount. Ruled out, one at a time: parallax from the
+  mesh lift, CSS/layout offset (measured `dx = 0` between the video and canvas rects), canvas
+  and video sizing, capture resolution/FOV (identical at 640×480 and 1280×720), and the
+  camera's principal point. The actual cause was the **printed target**: an A4 "Fit to Page"
+  print squashes the aspect ratio, so the physical marker no longer matches the dimensions the
+  descriptor declares and the fitted pose overshoots one side. Confirmed by displaying the
+  source image on a screen at 1:1 — the overlay lands correctly. Same diagnosis as
+  [webarkit/jsfeatNext#142](https://github.com/webarkit/jsfeatNext/issues/142).
+  Documented in the README (print at 100%; `pinball` = 189.0 × 236.4 mm).
+  **Lesson:** a constant, direction-specific error that is immune to every camera-side change
+  points at the physical target, not the camera model. Principal-point "correction" knobs were
+  prototyped and removed — they only masked the mismatch.
+- ✅ **Pose smoothing (`OneEuroFilter`) — done.** Optional 1€ filter on the pose matrix,
+  exposed via `smooth` / `smoothMinCutoff` / `smoothBeta` on `nft-anchor` (on by default).
+  First implemented in-house; now `src/poseFilter.js` wraps WebARKit's
+  `@webarkit/oneeurofilter-ts`, converting the Hz cutoffs to the package's per-millisecond
+  units. `test/poseFilter.test.js` pins that the smoothing is unchanged.
+- ✅ **Multi-marker — `<a-nft>` per target, visibility derived locally.** Several `<a-nft>`
+  elements each anchor their own target. Three upstream constraints originally shaped this;
+  **jsartoolkitNFT 1.13.0 lifts all three**:
+  - `lostNFTMarker` was single-marker
+    ([jsartoolkitNFT#611](https://github.com/webarkit/jsartoolkitNFT/issues/611)). It is
+    per-marker since 1.13.0, but we still derive visibility from pose timestamps
+    (`lostTimeout`): it is tunable where the upstream timeout is fixed at 200 ms, and it
+    behaves the same on any library version.
+  - `addNFTMarkers` was single-call
+    ([#612](https://github.com/webarkit/jsartoolkitNFT/issues/612)). Fixed in 1.13.0 (#666):
+    ids continue across calls and earlier markers stay loaded. Markers now load **one call
+    per marker, at any time** (`src/markerLoader.js`) — an `<a-nft>` added after tracking
+    started is loaded on the spot, and a bad `url` fails only its own `<a-nft>`.
+  - Only one marker could be tracked at a time
+    ([#613](https://github.com/webarkit/jsartoolkitNFT/issues/613)). 1.13.0 (#658) tracks
+    every loaded marker at once; the `continuousDetection` / `detectionInterval` system
+    attributes expose its detection policy.
+
+  jsartoolkitNFT cannot unload a marker and holds at most 20, so a removed `<a-nft>` parks
+  its tracker id in `MarkerRegistry`, and re-adding the same `url` reuses it.
+- ✅ **`getImage()` returns the captured frame instead of a per-call copy** (#6) — safe
+  because `process()` copies the pixels into the WASM heap synchronously.
+- Worker-based detection (Approach A) as a perf optimization (#7). Re-evaluate against
+  jsartoolkitNFT's threaded build (`@webarkit/jsartoolkit-nft/td`), which since 1.13.0 runs
+  detection off the main thread but uses pthreads (SharedArrayBuffer, so the page must be
+  cross-origin isolated with COOP/COEP headers).
+- Optional tracking-confidence threshold (not yet implemented).

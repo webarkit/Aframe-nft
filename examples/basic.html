@@ -5,30 +5,24 @@
     <title>Aframe-nft example</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=0.5, maximum-scale=1"/>
     <link rel="stylesheet" href="css/nft-style.css"/>
-    <style>
-        body {
-            margin: 0;
-        }
-
-        .example-container {
-            overflow: hidden;
-            position: absolute;
-            width: 100%;
-            height: 100%;
-        }
-    </style>
 </head>
 <body>
 <div id="app">
-    <video loop autoplay muted playsinline id="video"></video>
-    <canvas id="canvas"></canvas>
+    <video autoplay muted playsinline id="video"></video>
 </div>
 <script type="module" src="../src/index.js"></script>
 <div class="example-container">
-    <a-scene embedded arnft="videoWidth: 1280; videoHeight: 720">
+    <a-scene embedded arnft="videoWidth: 640; videoHeight: 480">
 
+        <!-- One <a-nft> per target. All of them are tracked at once: point the
+             camera at both and both meshes appear. See dynamic.html for adding
+             and removing <a-nft> elements while the scene runs. -->
         <a-nft name="pinball" url="DataNFT/pinball">
             <a-box color="#4CC3D9"></a-box>
+        </a-nft>
+
+        <a-nft name="kuva" url="DataNFT/kuva">
+            <a-sphere color="#E4572E"></a-sphere>
         </a-nft>
 
         <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
