@@ -1,5 +1,14 @@
 # Aframe-nft 📷
 
+[![CI](https://github.com/webarkit/Aframe-nft/actions/workflows/ci.yml/badge.svg)](https://github.com/webarkit/Aframe-nft/actions/workflows/ci.yml)
+[![License: LGPL-3.0-or-later](https://img.shields.io/badge/license-LGPL--3.0--or--later-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/webarkit/Aframe-nft?style=flat&logo=github)](https://github.com/webarkit/Aframe-nft/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/webarkit/Aframe-nft?style=flat&logo=github)](https://github.com/webarkit/Aframe-nft/network/members)
+[![GitHub issues](https://img.shields.io/github/issues/webarkit/Aframe-nft)](https://github.com/webarkit/Aframe-nft/issues)
+[![Last commit](https://img.shields.io/github/last-commit/webarkit/Aframe-nft)](https://github.com/webarkit/Aframe-nft/commits)
+[![A-Frame 1.7.1](https://img.shields.io/badge/A--Frame-1.7.1-ef2d5e.svg)](https://aframe.io)
+[![jsartoolkitNFT 1.13.0](https://img.shields.io/badge/jsartoolkitNFT-1.13.0-2a6ebb.svg)](https://github.com/webarkit/jsartoolkitNFT)
+
 A-Frame components for markerless AR with **NFT (Natural Feature Tracking)** image targets,
 powered by [jsartoolkitNFT](https://github.com/webarkit/jsartoolkitNFT).
 Declare an image target with `<a-nft>`, put any A-Frame content inside it, and the content
@@ -321,6 +330,9 @@ Design history and the reasons behind these choices are in [DESIGN.md](DESIGN.md
 | `npm test` | Unit tests (Vitest + jsdom) |
 | `npm run build` | Builds the IIFE bundle `dist/AframeNft.js` |
 | `npm run preview` | Serves a production build |
+
+CI (GitHub Actions) runs the tests and the build on every push to `main`/`dev` and on every
+pull request. It also fails if `dist/` does not match a fresh build.
 
 Conventions:
 - **Tests.** Logic lives in DOM-free modules with a Vitest suite under `test/`. The A-Frame
