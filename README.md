@@ -57,7 +57,7 @@ allow camera access, and point the camera at the
 [pinball image](https://raw.githubusercontent.com/artoolkitx/artoolkit5/master/doc/Marker%20images/pinball.jpg)
 printed at 100% scale, or shown on a screen. A blue box appears on it.
 
-To see two targets tracked at once without printing, show upstream's
+To try two targets at once without printing, open **Basic** and show upstream's
 [photo of both targets](https://github.com/webarkit/jsartoolkitNFT/blob/master/examples/node/pinball-demo.jpg)
 on a screen.
 
@@ -244,7 +244,7 @@ The content is centred on the target automatically, using the target's real-worl
 |---|---|
 | `NotAllowedError` | Camera permission was denied, or the page is not in a secure context (see the HTTPS note above). |
 | `NotReadableError` | The camera could not start, usually because another application is using it. Virtual cameras that cannot start (for example those installed by Meta Quest Link) are skipped automatically. |
-| `Cannot set properties of null` | The page has no `<video id="video">` element. |
+| a `TypeError` mentioning `srcObject` | The page has no `<video id="video">` element. |
 
 **`arnft: failed to load NFT marker "…"`.** The descriptor set could not be loaded:
 - check that `url` has **no** extension and that the path resolves relative to the page (the
@@ -268,7 +268,7 @@ it on the plane instead.
 
 ```mermaid
 flowchart LR
-    CAM[camera] --> VIDEO["video#video"]
+    CAM[camera] --> VIDEO["video element (id=video)"]
     VIDEO --> CVR[cameraViewRenderer<br/>320×240 frames]
     CVR --> ARC[ARControllerNFT<br/>jsartoolkitNFT]
     subgraph SYS [arnft system]
