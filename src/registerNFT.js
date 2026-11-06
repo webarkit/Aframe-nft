@@ -355,13 +355,15 @@ AFRAME.registerSystem('arnft', {
 
     /**
      * The camera stream ended: unplugged, or the permission was revoked. There are
-     * no more frames, so hide the content instead of leaving it frozen.
+     * no more frames, so hide the content instead of leaving it frozen, and release
+     * the tracker. With `videoReady` false, no other one starts.
      *
      * @private
      */
     _onCameraEnded: function () {
         this.videoReady = false;
         this._hideAll();
+        this._stopTracker();
         console.warn('arnft: the camera stream ended; tracking has stopped');
     },
 

@@ -372,7 +372,7 @@ describe('arnft camera changes', () => {
                 throw new Error('STREAM_ENDED');
             }),
         };
-        const tracker = { process: vi.fn() };
+        const tracker = { process: vi.fn(), dispose: vi.fn() };
         const { s, onLost } = loadedSystem({ tracker, videoReady: true, view });
 
         s._onCameraEnded();
@@ -382,6 +382,57 @@ describe('arnft camera changes', () => {
         expect(() => s.tick()).not.toThrow();
         expect(view.getImage).not.toHaveBeenCalled();
         warn.mockRestore();
+    });
+
+    describe('after the camera ended', () => {
+        let warn;
+
+        beforeEach(() => {
+            warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        });
+
+        afterEach(() => {
+            warn.mockRestore();
+        });
+
+        it('releases the tracker, which has no more frames to process', () => {
+            const tracker = { dispose: vi.fn() };
+            const { s } = loadedSystem({ tracker, videoReady: true });
+            s._onCameraEnded();
+            expect(tracker.dispose).toHaveBeenCalledTimes(1);
+            expect(s.tracker).toBeNull();
+        });
+
+        it('disposes a tracker that was still starting', async () => {
+            const late = { dispose: vi.fn() };
+            createNFTTracker.mockResolvedValueOnce(late);
+            const s = system({
+                videoReady: true,
+                _setupCamera: vi.fn(),
+                _loadPendingMarkers: vi.fn(),
+                view: { geometry: { frameWidth: 320, frameHeight: 240 } },
+            });
+            s.registry.add({ name: 'a', url: 'a', component: { onLost() {} } });
+
+            s._maybeStart();
+            s._onCameraEnded();
+            await flush();
+
+            expect(late.dispose).toHaveBeenCalledTimes(1);
+            expect(s.tracker).toBeNull();
+            expect(s._loadPendingMarkers).not.toHaveBeenCalled();
+        });
+
+        it('neither starts a tracker nor loads a target for a new <a-nft>', () => {
+            const tracker = { dispose: vi.fn(), addNFTTargets: vi.fn() };
+            const { s } = loadedSystem({ tracker, videoReady: true });
+            s._onCameraEnded();
+
+            s.registerMarker({ name: 'b', url: 'b', component: {} });
+
+            expect(tracker.addNFTTargets).not.toHaveBeenCalled();
+            expect(createNFTTracker).not.toHaveBeenCalled();
+        });
     });
 });
 
