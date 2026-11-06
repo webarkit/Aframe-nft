@@ -359,7 +359,8 @@ flowchart LR
    - centres the content using the target's real size (DPI → mm);
    - scales and lifts it.
 
-   A target untracked for more than `lostTimeout` ms is hidden.
+   Content stays hidden until its target's first pose, and is hidden again once the target
+   has been untracked for more than `lostTimeout` ms.
 5. **Alignment.** The video and the WebGL canvas are sized to the same "cover" box, so the
    projection maps 3D onto exactly the video's pixels.
 
