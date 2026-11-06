@@ -211,7 +211,8 @@ Decisions made during Phase 2 (see also Decision Log):
   tiny next to a detection pass, and a fresh copy is what a Worker needs anyway. The frame counter
   follows the frame-rate gate, not the camera, so a camera slower than `targetFrameRate` can still
   have a picture processed twice. Teardown (#16) hangs on an internal `arnft-lifecycle` component on
-  the scene, because A-Frame never calls `remove()` on a system.
+  the scene, because A-Frame never calls `remove()` on a system. That component does not run before
+  the scene has loaded, so a `MutationObserver` covers that time.
 - Worker-based detection (Approach A) as a perf optimization (#7). Re-evaluate against
   jsartoolkitNFT's threaded build (`@webarkit/jsartoolkit-nft/td`), which since 1.13.0 runs
   detection off the main thread but uses pthreads (SharedArrayBuffer, so the page must be

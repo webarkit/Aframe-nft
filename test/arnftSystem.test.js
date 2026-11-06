@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { createNFTTracker } from '@webarkit/jsartoolkit-nft';
 import { MarkerRegistry } from '../src/markerRegistry.js';
 
@@ -301,6 +301,30 @@ describe('arnft camera changes', () => {
         expect(createNFTTracker.mock.lastCall[0].cameraParam).toBe(new URL('my/cam.dat', document.baseURI).href);
     });
 
+    it('retries with a corrected cameraParam after a failed start', async () => {
+        // A bad file is the likeliest reason for a failed start, so the retry must
+        // not be stuck with it.
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        createNFTTracker.mockRejectedValueOnce(new Error('404'));
+        createNFTTracker.mockResolvedValueOnce({ addNFTTargets: () => new Promise(() => {}) });
+        const s = system({
+            videoReady: true,
+            data: { ...base, cameraParam: 'wrong/cam.dat' },
+            _setupCamera() {},
+            view: { geometry: { frameWidth: 320, frameHeight: 240 } },
+        });
+        s.registry.add({ name: 'a', url: 'a', component: {} });
+        s._maybeStart();
+        await flush();
+
+        s.data = { ...base, cameraParam: 'right/cam.dat' };
+        s._maybeStart();
+        await flush();
+
+        expect(createNFTTracker.mock.lastCall[0].cameraParam).toBe(new URL('right/cam.dat', document.baseURI).href);
+        error.mockRestore();
+    });
+
     it('disposes a tracker from a start that a restart overtook', async () => {
         let finishOld;
         const late = { dispose: vi.fn() };
@@ -468,6 +492,78 @@ describe('arnft teardown when the scene is removed (#16)', () => {
 
         expect(late.dispose).toHaveBeenCalledTimes(1);
         expect(s.tracker).toBeNull();
+    });
+
+    it('still stops the camera when disposing the tracker throws', () => {
+        // The tracker's dispose() lets a native teardown error reach the caller. It
+        // must not leave the camera on, and it must not escape into A-Frame.
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const tracker = {
+            dispose: vi.fn(() => {
+                throw new Error('teardown failed');
+            }),
+        };
+        const view = { destroy: vi.fn() };
+        const s = system({ tracker, view, videoReady: true });
+
+        expect(() => s._teardown()).not.toThrow();
+
+        expect(view.destroy).toHaveBeenCalledTimes(1);
+        expect(s.tracker).toBeNull();
+        expect(error.mock.calls[0][0]).toContain('arnft:');
+        error.mockRestore();
+    });
+
+    describe('when the scene is removed before it has loaded', () => {
+        // A-Frame only initialises a scene's components once it has loaded, and
+        // removing one that is not initialised waits for ever, so arnft-lifecycle
+        // never runs in that window.
+        let el;
+
+        beforeEach(() => {
+            el = document.createElement('div');
+            document.body.appendChild(el);
+        });
+
+        afterEach(() => {
+            el.remove();
+        });
+
+        it('tears down when it is removed', async () => {
+            const s = system({ el, _teardown: vi.fn() });
+            s._watchRemovalBeforeLoad();
+            el.remove();
+            await flush();
+            expect(s._teardown).toHaveBeenCalledTimes(1);
+        });
+
+        it('tears down when an ancestor is removed', async () => {
+            const parent = document.createElement('div');
+            document.body.appendChild(parent);
+            parent.appendChild(el);
+            const s = system({ el, _teardown: vi.fn() });
+            s._watchRemovalBeforeLoad();
+            parent.remove();
+            await flush();
+            expect(s._teardown).toHaveBeenCalledTimes(1);
+        });
+
+        it('ignores other changes to the page', async () => {
+            const s = system({ el, _teardown: vi.fn() });
+            s._watchRemovalBeforeLoad();
+            document.body.appendChild(document.createElement('div')).remove();
+            await flush();
+            expect(s._teardown).not.toHaveBeenCalled();
+        });
+
+        it('stops watching once the scene has loaded, as arnft-lifecycle then takes over', async () => {
+            const s = system({ el, _teardown: vi.fn() });
+            s._watchRemovalBeforeLoad();
+            el.dispatchEvent(new Event('loaded'));
+            el.remove();
+            await flush();
+            expect(s._teardown).not.toHaveBeenCalled();
+        });
     });
 
     it('does not report a camera start cancelled by teardown, but reports other errors', () => {

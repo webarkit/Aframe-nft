@@ -112,6 +112,26 @@ AFRAME.registerSystem('arnft', {
         // A-Frame never calls remove() on a system, so teardown hangs on a component:
         // a scene being removed runs the remove() of its own components.
         this.el.setAttribute('arnft-lifecycle', '');
+        this._watchRemovalBeforeLoad();
+    },
+
+    /**
+     * Cover the time before the scene has loaded, which can be seconds with
+     * `<a-assets>`. A-Frame only initialises a scene's components once it has loaded,
+     * and removing one that is not initialised waits for ever, so `arnft-lifecycle`
+     * does not run and the camera, which starts right away, would stay on.
+     *
+     * @private
+     */
+    _watchRemovalBeforeLoad: function () {
+        const observer = new MutationObserver(() => {
+            if (!this.el.isConnected) {
+                observer.disconnect();
+                this._teardown();
+            }
+        });
+        observer.observe(document, { childList: true, subtree: true });
+        this.el.addEventListener('loaded', () => observer.disconnect(), { once: true });
     },
 
     /**
@@ -243,17 +263,18 @@ AFRAME.registerSystem('arnft', {
 
         const { frameWidth, frameHeight } = this.view.geometry;
         this._frameSize = { width: frameWidth, height: frameHeight };
-        // Kept from the first start: a partial setAttribute('arnft', 'key: value')
-        // returns cameraParam to its default, which a restart must not pick up.
-        this._cameraParam = this._cameraParam || resolveUrl(this.data.cameraParam);
+        const cameraParam = this._cameraParam || resolveUrl(this.data.cameraParam);
         const startData = this.data;
         const generation = this._generation;
-        createNFTTracker(trackerConfig(startData, this._frameSize, this._cameraParam))
+        createNFTTracker(trackerConfig(startData, this._frameSize, cameraParam))
             .then((tracker) => {
                 if (generation !== this._generation) {
                     tracker.dispose();
                     return;
                 }
+                // Kept once it has worked: a partial setAttribute('arnft', 'key: value')
+                // returns cameraParam to its default, which a restart must not pick up.
+                this._cameraParam = cameraParam;
                 this._onTrackerReady(tracker, startData);
             })
             .catch((err) => {
@@ -279,7 +300,13 @@ AFRAME.registerSystem('arnft', {
         this.starting = false;
         this.registry.resetLoadState();
         if (tracker) {
-            tracker.dispose();
+            // Its dispose() lets a native teardown error reach the caller. Whatever
+            // called this still has to finish: stop the camera, start a new tracker.
+            try {
+                tracker.dispose();
+            } catch (err) {
+                console.error('arnft: could not release the tracker', err);
+            }
         }
     },
 
