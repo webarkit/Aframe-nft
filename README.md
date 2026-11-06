@@ -296,6 +296,10 @@ ends with the reason:
 | `capacity` | A page can hold at most 20 targets. |
 | `unknown` | The tracker refused the descriptors, which may be unreadable, for example a corrupt `.fset`. |
 
+**`arnft: NFT marker "…" has not loaded after 30 s`.** The server took the request and has not
+answered, and the Network tab shows it as pending. Other targets keep tracking, and this one still
+appears if the answer arrives.
+
 **`404 (Not Found)` errors for `….zft` at start-up.** These are expected, one per target. They
 are harmless as long as no `arnft: failed to load NFT marker` error follows.
 - Before loading a target's `.fset` / `.iset` / `.fset3` files, jsartoolkitNFT checks whether a

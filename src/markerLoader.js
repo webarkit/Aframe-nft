@@ -19,6 +19,14 @@
 /** @typedef {import('@webarkit/jsartoolkit-nft').NFTTracker} NFTTracker */
 
 /**
+ * How long a load may go unanswered before a warning. Failures report on their
+ * own, so this only concerns a server that accepts the request and never answers.
+ * It warns rather than fails: the tracker has no per-target signal, so the load
+ * cannot be cancelled and may still finish, on a slow phone for example.
+ */
+const SLOW_LOAD_MS = 30000;
+
+/**
  * Request every registered marker that is not loaded or loading yet, one
  * `addNFTTargets()` call per marker.
  *
@@ -68,10 +76,20 @@ function loadMarker(tracker, registry, marker, onLoaded, onFailed) {
         }
     };
 
+    const slowLoad = setTimeout(() => {
+        if (registry.has(marker)) {
+            console.warn(
+                `arnft: NFT marker "${marker.name}" (${marker.url}) has not loaded after ` +
+                    `${SLOW_LOAD_MS / 1000} s; still waiting for the server`,
+            );
+        }
+    }, SLOW_LOAD_MS);
+
     // fail only sees a load that failed. A throw from onLoaded is a separate
     // problem: the target did load and is tracked.
     tracker
         .addNFTTargets([marker.url], { origin: 'corner' })
         .then(onResult, fail)
-        .catch((err) => console.error(`arnft: NFT marker "${marker.name}" loaded, but its <a-nft> could not use it`, err));
+        .catch((err) => console.error(`arnft: NFT marker "${marker.name}" loaded, but its <a-nft> could not use it`, err))
+        .finally(() => clearTimeout(slowLoad));
 }

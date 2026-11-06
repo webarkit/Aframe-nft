@@ -228,9 +228,11 @@ from `reason` and `message`. `MAX_MARKERS` and the no-id branch go. `onData` sti
 #14, point by point:
 
 1. Fixed: `reason` says what actually happened.
-2. Closed without a timeout of our own: since 1.15 network failures report instead of hanging, and
-   `dispose()` cancels. A connection that stays open without answering is unbounded, and the
-   tracker API has no per-target signal, so note this in the issue.
+2. A warning after 30 s, chosen by the maintainer when Qodo flagged the gap on the PR. Since 1.15
+   network failures report instead of hanging, so this only concerns a connection that stays open
+   without answering. The tracker API has no per-target signal, so that load cannot be cancelled and
+   may still finish: it warns instead of failing, and the closure keeps the component until the
+   request ends.
 3. Update the README limitation. The `.zft` probe is asynchronous now, but on the same thread the
    KPM build still stalls briefly. PR 3 adds that the Worker avoids it.
 

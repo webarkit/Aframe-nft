@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MarkerRegistry } from '../src/markerRegistry.js';
 import { loadPendingMarkers } from '../src/markerLoader.js';
 
@@ -137,5 +137,63 @@ describe('loadPendingMarkers', () => {
         const again = registry.add(marker('a'));
         expect(again.id).toBe(0);
         expect(again.data).toEqual(size);
+    });
+});
+
+describe('loadPendingMarkers on a load that does not answer', () => {
+    let warn;
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        warn.mockRestore();
+        vi.useRealTimers();
+    });
+
+    it('warns once after 30 s, naming the marker', async () => {
+        const { tracker, registry, handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        await vi.advanceTimersByTimeAsync(29999);
+        expect(warn).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0]).toContain('arnft:');
+        expect(warn.mock.calls[0][0]).toContain('"a"');
+        await vi.advanceTimersByTimeAsync(60000);
+        expect(warn).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not fail the marker, because the load may still finish', async () => {
+        // The tracker has no per-target signal, so the load cannot be cancelled.
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(a.failed).toBe(false);
+        expect(handlers.onFailed).not.toHaveBeenCalled();
+
+        tracker.requests[0].resolve(loaded(0));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(a.id).toBe(0);
+        expect(handlers.onLoaded).toHaveBeenCalledWith(a, size);
+    });
+
+    it('stays quiet when the load answers in time', async () => {
+        const { tracker, registry, handlers } = setup('a', 'b');
+        loadPendingMarkers(tracker, registry, handlers);
+        tracker.requests[0].resolve(loaded(0));
+        tracker.requests[1].resolve([{ status: 'error', url: 'DataNFT/b', reason: 'network', message: '404' }]);
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('stays quiet about a marker removed while it was loading', async () => {
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        registry.remove(a);
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(warn).not.toHaveBeenCalled();
     });
 });

@@ -280,7 +280,7 @@ it('logs a rejected patch instead of throwing (bad value)', async () => {
 - [ ] **Step 1: README.** Badge and banner sample to 1.16.0. Remove the `logLevel` caveat about jsartoolkitNFT#677, and say that the camera parameter table still prints at every level. "How it works": diagram and steps use `createNFTTracker`, `addNFTTargets` and `process()` results. Module table: add `src/trackerSettings.js`, `src/frames.js`. Known limitations: runtime adds still stall briefly while the KPM set builds, though the `.zft` check no longer blocks.
 - [ ] **Step 2: DESIGN.md section 10.** Replace the visibility and marker-load notes with the tracker API. Record the pose check result.
 - [ ] **Step 3:** Run `npm run build` and `npm test`. Commit as `docs: update for jsartoolkitNFT 1.16`, with the rebuilt bundle.
-- [ ] **Step 4:** Push and open a PR into `dev`. The body lists `Fixes #13`, `Fixes #14`, the Task 2 result, and a draft comment for #14: point 1 fixed by `reason`; point 2 closed without a timeout because failures now report, while a connection that stays open with no answer remains unbounded and the tracker has no per-target signal; point 3 documented.
+- [ ] **Step 4:** Push and open a PR into `dev`. The body lists `Fixes #13`, `Fixes #14`, the Task 2 result, and a draft comment for #14: point 1 fixed by `reason`; point 2 answered with a warning after 30 s, because failures now report and the tracker has no per-target signal to cancel a load that stays open with no answer; point 3 documented.
 - [ ] **Step 5:** Ask the maintainer for the real-camera check. Stop until merged.
 
 ---
