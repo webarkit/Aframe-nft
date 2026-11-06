@@ -430,6 +430,59 @@ describe('arnft runtime settings (#13)', () => {
     });
 });
 
+describe('arnft teardown when the scene is removed (#16)', () => {
+    it('the scene component tears the system down', () => {
+        const _teardown = vi.fn();
+        definitions['arnft-lifecycle'].remove.call({ el: { systems: { arnft: { _teardown } } } });
+        expect(_teardown).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops the camera, disposes the tracker and blocks a restart', () => {
+        const tracker = { dispose: vi.fn() };
+        const view = { destroy: vi.fn() };
+        const s = system({ tracker, view, videoReady: true });
+
+        s._teardown();
+
+        expect(view.destroy).toHaveBeenCalledTimes(1);
+        expect(tracker.dispose).toHaveBeenCalledTimes(1);
+        expect(s.tracker).toBeNull();
+        expect(s.videoReady).toBe(false);
+
+        s.registerMarker({ name: 'a', url: 'a', component: {} });
+        expect(createNFTTracker).not.toHaveBeenCalled();
+    });
+
+    it('disposes a tracker that resolves after teardown', async () => {
+        const late = { dispose: vi.fn() };
+        createNFTTracker.mockResolvedValueOnce(late);
+        const s = system({
+            videoReady: true,
+            view: { destroy() {}, geometry: { frameWidth: 320, frameHeight: 240 } },
+        });
+        s.registry.add({ name: 'a', url: 'a', component: {} });
+
+        s._maybeStart();
+        s._teardown();
+        await flush();
+
+        expect(late.dispose).toHaveBeenCalledTimes(1);
+        expect(s.tracker).toBeNull();
+    });
+
+    it('does not report a camera start cancelled by teardown, but reports other errors', () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = system();
+        s._onCameraError(Object.assign(new Error('destroyed'), { code: 'DESTROYED' }));
+        expect(error).not.toHaveBeenCalled();
+
+        const denied = new Error('NotAllowedError');
+        s._onCameraError(denied);
+        expect(error).toHaveBeenCalledWith('arnft: camera init failed', denied);
+        error.mockRestore();
+    });
+});
+
 describe('arnft registerMarker', () => {
     it('hands a re-added <a-nft> the size kept from its first load', () => {
         const s = system({ tracker: {}, _loadPendingMarkers: vi.fn() });

@@ -91,7 +91,7 @@ AFRAME.registerSystem('arnft', {
         this.tracker = null;
         this.videoReady = false;
         this.starting = false;
-        // No tracker will start any more: tracking failed.
+        // No tracker will start any more: tracking failed, or the scene was removed.
         this.stopped = false;
         // Bumped when a tracker is stopped, so that a start still in flight knows
         // it was overtaken.
@@ -107,7 +107,37 @@ AFRAME.registerSystem('arnft', {
                 this.videoReady = true;
                 this._maybeStart();
             })
-            .catch((err) => console.error('arnft: camera init failed', err));
+            .catch((err) => this._onCameraError(err));
+
+        // A-Frame never calls remove() on a system, so teardown hangs on a component:
+        // a scene being removed runs the remove() of its own components.
+        this.el.setAttribute('arnft-lifecycle', '');
+    },
+
+    /**
+     * The camera could not start. A start cancelled by `_teardown()` is not a failure.
+     *
+     * @param {*} err The `getUserMedia` error or a `CameraViewError`.
+     * @private
+     */
+    _onCameraError: function (err) {
+        if (err && err.code === 'DESTROYED') {
+            return;
+        }
+        console.error('arnft: camera init failed', err);
+    },
+
+    /**
+     * The scene was removed: stop the camera and release the tracker. The system does
+     * not come back, so re-attaching a removed scene is not supported.
+     *
+     * @private
+     */
+    _teardown: function () {
+        this.stopped = true;
+        this.videoReady = false;
+        this._stopTracker();
+        this.view.destroy();
     },
 
     /**
@@ -496,6 +526,16 @@ AFRAME.registerSystem('arnft', {
             return;
         }
         routeFrameResult(this.registry, result);
+    },
+});
+
+/**
+ * `arnft-lifecycle` component: internal, added to the scene by the `arnft` system,
+ * which has no removal hook of its own.
+ */
+AFRAME.registerComponent('arnft-lifecycle', {
+    remove: function () {
+        this.el.systems.arnft._teardown();
     },
 });
 
