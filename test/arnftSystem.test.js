@@ -59,12 +59,28 @@ describe('arnft log level', () => {
     });
 });
 
+describe('arnft projection', () => {
+    it('takes the projection from projectionFor, at the exact video aspect', () => {
+        const geometry = { frameWidth: 320, frameHeight: 240, videoWidth: 1280, videoHeight: 720 };
+        const matrix = Float64Array.from({ length: 16 }, (_, i) => i);
+        const tracker = { projectionFor: vi.fn(() => matrix) };
+        const s = system({
+            tracker,
+            view: { geometry },
+            el: { querySelector: () => ({ getObject3D: () => ({}) }) },
+        });
+        s._setupCamera();
+        expect(tracker.projectionFor).toHaveBeenCalledWith({ width: 1280, height: 720 }, geometry);
+        expect(s.projArray).toEqual(Array.from(matrix));
+    });
+});
+
 describe('arnft tracker start-up', () => {
     it('creates the tracker at the processing frame size, once a target is registered', async () => {
         createNFTTracker.mockResolvedValue({ cameraMatrix: new Float64Array(16) });
         const s = system({
             videoReady: true,
-            camV: { pw: 320, ph: 240 },
+            view: { geometry: { frameWidth: 320, frameHeight: 240 } },
             _setupCamera() {},
             _loadPendingMarkers() {},
         });
@@ -105,7 +121,7 @@ describe('arnft tracker start-up', () => {
     it('allows another start after a failed one', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => {});
         createNFTTracker.mockRejectedValue(new Error('no camera file'));
-        const s = system({ videoReady: true, camV: { pw: 320, ph: 240 } });
+        const s = system({ videoReady: true, view: { geometry: { frameWidth: 320, frameHeight: 240 } } });
         s.registry.add({ name: 'a', url: 'a', component: {} });
         s._maybeStart();
         await flush();
@@ -127,7 +143,7 @@ describe('arnft per-frame work', () => {
                 transitions: [],
             })),
         };
-        const s = system({ tracker, videoReady: true, camV: { getImage: () => image } });
+        const s = system({ tracker, videoReady: true, view: { getImage: () => image } });
         s.registry.setLoaded(s.registry.add({ name: 'a', url: 'a', component }), 0, size);
 
         s.tick();
@@ -139,7 +155,7 @@ describe('arnft per-frame work', () => {
 
     it('does not process before the tracker exists', () => {
         const getImage = vi.fn();
-        system({ videoReady: true, camV: { getImage } }).tick();
+        system({ videoReady: true, view: { getImage } }).tick();
         expect(getImage).not.toHaveBeenCalled();
     });
 });
@@ -190,7 +206,7 @@ describe('arnft runtime settings (#13)', () => {
         createNFTTracker.mockResolvedValue(tracker);
         const s = system({
             videoReady: true,
-            camV: { pw: 320, ph: 240 },
+            view: { geometry: { frameWidth: 320, frameHeight: 240 } },
             _setupCamera() {},
             _loadPendingMarkers() {},
         });

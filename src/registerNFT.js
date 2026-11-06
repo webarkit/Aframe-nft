@@ -17,7 +17,8 @@
  */
 import 'aframe';
 import { createNFTTracker } from '@webarkit/jsartoolkit-nft';
-import { cameraViewRenderer } from './cameraViewRenderer';
+import { CameraView } from '@webarkit/camera-view';
+import { withIdealSize } from './cameraConstraints';
 import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
 import { PoseFilter } from './poseFilter';
 import { MarkerRegistry } from './markerRegistry';
@@ -81,20 +82,20 @@ AFRAME.registerSystem('arnft', {
      */
     init: function () {
         this.video = document.getElementById('video');
-        this.camV = new cameraViewRenderer(this.video);
+        this.view = new CameraView(this.video, {
+            mediaDevices: withIdealSize(navigator.mediaDevices, {
+                width: this.data.videoWidth,
+                height: this.data.videoHeight,
+            }),
+        });
         this.tracker = null;
         this.videoReady = false;
         this.starting = false;
-        // Markers registered by <a-nft> components: load state + visibility.
+        // Markers registered by <a-nft> components: load state and reusable ids.
         this.registry = new MarkerRegistry();
 
-        this.camV
-            .initialize({
-                facingMode: 'environment',
-                targetFrameRate: 60,
-                width: this.data.videoWidth,
-                height: this.data.videoHeight,
-            })
+        this.view
+            .initialize({ facingMode: 'environment', targetFrameRate: 60 })
             .then(() => {
                 this.videoReady = true;
                 this._maybeStart();
@@ -202,9 +203,10 @@ AFRAME.registerSystem('arnft', {
         }
         this.starting = true;
 
-        const size = { width: this.camV.pw, height: this.camV.ph };
+        const { frameWidth, frameHeight } = this.view.geometry;
+        this._frameSize = { width: frameWidth, height: frameHeight };
         const startData = this.data;
-        createNFTTracker(trackerConfig(startData, size, resolveUrl(startData.cameraParam)))
+        createNFTTracker(trackerConfig(startData, this._frameSize, resolveUrl(startData.cameraParam)))
             .then((tracker) => this._onTrackerReady(tracker, startData))
             .catch((err) => {
                 // Allow a later _maybeStart() to retry instead of blocking forever.
@@ -252,14 +254,14 @@ AFRAME.registerSystem('arnft', {
     /**
      * Compute and store the tracker's projection matrix for the A-Frame camera.
      *
-     * `cameraMatrix` targets the full `pw` × `ph` processing canvas, but
-     * the video content is drawn letterboxed at `w` × `h` inside it. Scaling by
-     * `pw / w` (x) and `ph / h` (y) undoes that padding, giving the intrinsic
-     * projection at the video's true aspect.
+     * The tracker's own matrix targets the whole processing frame, where the video
+     * is letterboxed. `projectionFor` undoes that from the frame geometry, giving
+     * the projection at the video's true aspect. The viewport is given that same
+     * aspect, so no further scaling applies.
      *
-     * No further aspect correction is needed. Alignment comes from sizing the
-     * render canvas to the same box as the video (see `_resize`), the AR.js
-     * approach, so the overlay matches the video for any `camera_para`.
+     * Alignment comes from sizing the render canvas to the same box as the video
+     * (see `_resize`), the AR.js approach, so the overlay matches the video for any
+     * `camera_para`.
      *
      * @private
      */
@@ -270,18 +272,9 @@ AFRAME.registerSystem('arnft', {
             console.warn('arnft: no camera entity found to apply projection');
             return;
         }
-        const cv = this.camV;
-        const ratioW = cv.pw / cv.w;
-        const ratioH = cv.ph / cv.h;
-        const proj = Array.from(this.tracker.cameraMatrix);
-        proj[0] *= ratioW;
-        proj[4] *= ratioW;
-        proj[8] *= ratioW;
-        proj[12] *= ratioW;
-        proj[1] *= ratioH;
-        proj[5] *= ratioH;
-        proj[9] *= ratioH;
-        proj[13] *= ratioH;
+        const geometry = this.view.geometry;
+        const viewport = { width: geometry.videoWidth, height: geometry.videoHeight };
+        const proj = Array.from(this.tracker.projectionFor(viewport, geometry));
 
         // Re-assert both projection and sizing each frame (A-Frame's camera/render
         // systems recompute them on resize).
@@ -380,7 +373,7 @@ AFRAME.registerSystem('arnft', {
         }
         this._resize();
         this._applyProjection();
-        routeFrameResult(this.registry, this.tracker.process(this.camV.getImage(), performance.now()));
+        routeFrameResult(this.registry, this.tracker.process(this.view.getImage(), performance.now()));
     },
 });
 
