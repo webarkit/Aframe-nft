@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 
 vi.mock('aframe', () => ({}));
-vi.mock('@webarkit/jsartoolkit-nft', () => ({ ARControllerNFT: {} }));
+vi.mock('@webarkit/jsartoolkit-nft', () => ({ createNFTTracker: vi.fn() }));
 
 // Records every PoseFilter construction. Each one means an extra
 // "OneEuroFilter: <version>" console line from the package, and a reset of
@@ -35,7 +35,13 @@ beforeAll(async () => {
         registerPrimitive: () => {},
         primitives: { getMeshMixin: () => ({}) },
         utils: { extendDeep: (target, ...sources) => Object.assign(target, ...sources) },
-        THREE: { Matrix4: class {} },
+        THREE: {
+            Matrix4: class {
+                multiply() {
+                    return this;
+                }
+            },
+        },
     };
     await import('../src/registerNFT.js');
 });
@@ -113,6 +119,14 @@ describe('nft-anchor smoothing filter', () => {
         anchor.update(oldData);
         expect(Object.is(anchor.filter, filter)).toBe(false);
         expect(createdFilters.at(-1)).toEqual({ minCutoff: 0.0001, beta: 0.5 });
+    });
+
+    it('filters with the frame time it is given, not the clock', () => {
+        // In a Worker a result arrives after its frame, so the clock would be wrong.
+        const anchor = startedAnchor();
+        const filter = vi.spyOn(anchor.filter, 'filter');
+        anchor.onPose(new Float64Array(16), 1234);
+        expect(filter.mock.calls[0][0]).toBe(1234);
     });
 
     it('drops the filter when smoothing is turned off', () => {

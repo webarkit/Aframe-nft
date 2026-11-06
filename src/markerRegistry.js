@@ -7,14 +7,14 @@
  * 1. **Load state.** A marker may be registered before the tracker exists (the
  *    common case) or after it is already running (a dynamically added
  *    `<a-nft>`). Both must end up loaded exactly once.
- * 2. **Visibility.** Each marker is stamped when a pose arrives and treated as
- *    gone once it goes stale. jsartoolkitNFT's `lostNFTMarker` event is not
- *    used: it was single-marker before 1.13.0 (webarkit/jsartoolkitNFT#611),
- *    and its timeout is fixed at 200 ms since.
- * 3. **Removal.** jsartoolkitNFT cannot unload a marker and holds at most 20.
- *    When an `<a-nft>` goes away, its tracker id is parked by url and handed to
- *    the next `<a-nft>` added with the same url, instead of loading the target
- *    again.
+ * 2. **Removal.** jsartoolkitNFT cannot unload a marker and holds at most 20.
+ *    When an `<a-nft>` goes away, its tracker id is parked by url, with the
+ *    target's size, and handed to the next `<a-nft>` added with the same url,
+ *    instead of loading the target again. The size is kept because the tracker
+ *    has no `getNFTData()`.
+ *
+ * Which targets are in view is the tracker's job: its `process()` results carry
+ * debounced `lost` transitions (see `frames.js`).
  *
  * Kept free of A-Frame / THREE / DOM so it can be unit-tested in isolation.
  *
@@ -26,12 +26,12 @@
  *
  * @typedef {object} MarkerComponent
  * @property {function(NFTData): void} onData Receives the target's size once it has loaded.
- * @property {function(ArrayLike<number>): void} onPose Receives each new pose (`matrixGL_RH`).
+ * @property {function(ArrayLike<number>, number): void} onPose Receives each new pose and its frame time (ms).
  * @property {function(): void} onLost Called once when the target goes out of view.
  */
 
 /**
- * Real-world size data of a loaded target, from `ARControllerNFT.getNFTData()`.
+ * Real-world size data of a loaded target, mapped from the tracker's `TargetInfo`.
  *
  * @typedef {object} NFTData
  * @property {number} width Width in image pixels.
@@ -47,10 +47,9 @@
  * @property {string} url Descriptor-set url, resolved and without extension.
  * @property {MarkerComponent} component The owning `nft-anchor` component.
  * @property {number|null} id Tracker id once loaded, else `null`.
+ * @property {NFTData|null} data The target's size once loaded, else `null`.
  * @property {boolean} loading A load request is in flight.
  * @property {boolean} failed The load failed. The record is not retried.
- * @property {number} lastSeen Time (ms, `performance.now()`) of the last pose.
- * @property {boolean} visible Whether the target is currently considered in view.
  */
 
 export class MarkerRegistry {
@@ -59,13 +58,16 @@ export class MarkerRegistry {
         this.markers = [];
         /** @type {Map<number, MarkerRecord>} */
         this._byId = new Map();
-        /** @type {Map<string, number[]>} url -> tracker ids left loaded by removed markers, oldest first. */
+        /**
+         * Targets left loaded by removed markers, oldest first.
+         * @type {Map<string, {id: number, data: NFTData}[]>}
+         */
         this._parked = new Map();
     }
 
     /**
      * Register a marker. If a removed marker left a loaded target for the same
-     * url, the record reuses its id and comes back already loaded.
+     * url, the record reuses it and comes back already loaded.
      *
      * @param {{name: string, url: string, component: MarkerComponent}} marker
      *     Mutated into, and returned as, the stored record.
@@ -73,15 +75,15 @@ export class MarkerRegistry {
      */
     add(marker) {
         marker.id = null;
+        marker.data = null;
         marker.loading = false;
         marker.failed = false;
-        marker.lastSeen = 0;
-        marker.visible = false;
         this.markers.push(marker);
 
         const parked = this._parked.get(marker.url);
         if (parked) {
-            this.setId(marker, parked.shift());
+            const { id, data } = parked.shift();
+            this.setLoaded(marker, id, data);
             if (parked.length === 0) {
                 this._parked.delete(marker.url);
             }
@@ -98,9 +100,8 @@ export class MarkerRegistry {
     }
 
     /**
-     * Unregister a marker: its poses are no longer routed and it is never
-     * reported stale. If it was loaded, its id is parked for reuse by url.
-     * Unknown records are ignored.
+     * Unregister a marker: its poses are no longer routed. If it was loaded, its
+     * target is parked for reuse by url. Unknown records are ignored.
      *
      * @param {MarkerRecord} marker
      */
@@ -110,10 +111,9 @@ export class MarkerRegistry {
             return;
         }
         this.markers.splice(index, 1);
-        marker.visible = false;
         if (marker.id !== null) {
             this._byId.delete(marker.id);
-            this._park(marker.url, marker.id);
+            this._park(marker.url, marker.id, marker.data);
         }
     }
 
@@ -142,21 +142,23 @@ export class MarkerRegistry {
     }
 
     /**
-     * Record the tracker id assigned to a marker. If the marker was removed
-     * while it was loading, the id is parked instead, so a re-added `<a-nft>`
-     * with the same url reuses it.
+     * Record the loaded target of a marker. If the marker was removed while it
+     * was loading, the target is parked instead, so a re-added `<a-nft>` with the
+     * same url reuses it.
      *
      * @param {MarkerRecord} marker
-     * @param {number} id
+     * @param {number} id Tracker id.
+     * @param {NFTData} data The target's size.
      * @returns {MarkerRecord|null} The record, or `null` if it was removed.
      */
-    setId(marker, id) {
+    setLoaded(marker, id, data) {
         marker.loading = false;
         if (!this.has(marker)) {
-            this._park(marker.url, id);
+            this._park(marker.url, id, data);
             return null;
         }
         marker.id = id;
+        marker.data = data;
         this._byId.set(id, marker);
         return marker;
     }
@@ -164,12 +166,13 @@ export class MarkerRegistry {
     /**
      * @param {string} url
      * @param {number} id
+     * @param {NFTData} data
      * @private
      */
-    _park(url, id) {
-        const ids = this._parked.get(url) || [];
-        ids.push(id);
-        this._parked.set(url, ids);
+    _park(url, id, data) {
+        const targets = this._parked.get(url) || [];
+        targets.push({ id, data });
+        this._parked.set(url, targets);
     }
 
     /**
@@ -178,41 +181,5 @@ export class MarkerRegistry {
      */
     get(id) {
         return this._byId.get(id) || null;
-    }
-
-    /**
-     * A pose arrived for `id`: stamp it and mark it visible.
-     *
-     * @param {number} id Tracker id from the `getNFTMarker` event.
-     * @param {number} now Current time in ms.
-     * @returns {MarkerRecord|null} The marker, or `null` when the id is not one of ours.
-     */
-    markSeen(id, now) {
-        const marker = this._byId.get(id);
-        if (!marker) {
-            return null;
-        }
-        marker.lastSeen = now;
-        marker.visible = true;
-        return marker;
-    }
-
-    /**
-     * Markers that were visible but have not been seen within `timeout` ms.
-     * They are flipped to hidden here, so each one is reported exactly once.
-     *
-     * @param {number} now Current time in ms.
-     * @param {number} timeout Time in ms after which an unseen marker counts as lost.
-     * @returns {MarkerRecord[]}
-     */
-    collectStale(now, timeout) {
-        const stale = [];
-        for (const marker of this.markers) {
-            if (marker.visible && now - marker.lastSeen > timeout) {
-                marker.visible = false;
-                stale.push(marker);
-            }
-        }
-        return stale;
     }
 }
