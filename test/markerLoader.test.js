@@ -106,6 +106,26 @@ describe('loadPendingMarkers', () => {
         expect(handlers.onFailed).toHaveBeenCalledWith(a, error);
     });
 
+    it('does not report a throw from the component as a failed load', async () => {
+        // The target did load and is tracked: calling it a load failure would send
+        // the user looking for a network or descriptor problem that is not there.
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        const bug = new Error('bad mesh');
+        handlers.onLoaded.mockImplementation(() => {
+            throw bug;
+        });
+        loadPendingMarkers(tracker, registry, handlers);
+        tracker.requests[0].resolve(loaded(0));
+        await flush();
+        expect(a.failed).toBe(false);
+        expect(a.id).toBe(0);
+        expect(handlers.onFailed).not.toHaveBeenCalled();
+        expect(log.mock.calls[0][0]).toContain('arnft:');
+        expect(log.mock.calls[0][1]).toBe(bug);
+        log.mockRestore();
+    });
+
     it('does not hand data to a marker removed while it was loading', async () => {
         const { tracker, registry, markers: [a], handlers } = setup('a');
         loadPendingMarkers(tracker, registry, handlers);

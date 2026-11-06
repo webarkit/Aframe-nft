@@ -183,6 +183,26 @@ describe('arnft runtime settings (#13)', () => {
         warn.mockRestore();
     });
 
+    it('applies a setting changed while the tracker was starting', async () => {
+        // The config is built when the start begins, and update() has no tracker
+        // to talk to until it ends, so the change would otherwise be lost.
+        const tracker = { configure: vi.fn(() => Promise.resolve()) };
+        createNFTTracker.mockResolvedValue(tracker);
+        const s = system({
+            videoReady: true,
+            camV: { pw: 320, ph: 240 },
+            _setupCamera() {},
+            _loadPendingMarkers() {},
+        });
+        s.registry.add({ name: 'a', url: 'a', component: {} });
+        s._maybeStart();
+        s.data = { ...base, detectionInterval: 0 };
+        s.update(base);
+        await flush();
+        expect(s.tracker).toBe(tracker);
+        expect(tracker.configure).toHaveBeenCalledWith({ detectionInterval: 0 });
+    });
+
     it('logs a rejected patch instead of throwing (bad value)', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => {});
         const tracker = { configure: vi.fn(() => Promise.reject(new TypeError('detectionInterval'))) };

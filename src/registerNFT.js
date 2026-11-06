@@ -123,9 +123,18 @@ AFRAME.registerSystem('arnft', {
             this.data = oldData;
             return;
         }
-        if (!this.tracker) {
-            return;
+        if (this.tracker) {
+            this._applySettings(oldData);
         }
+    },
+
+    /**
+     * Send the tracker whichever runtime settings differ from `oldData`.
+     *
+     * @param {object} oldData The settings the tracker has now.
+     * @private
+     */
+    _applySettings: function (oldData) {
         const patch = runtimePatch(oldData, this.data);
         if (patch) {
             this.tracker
@@ -194,8 +203,9 @@ AFRAME.registerSystem('arnft', {
         this.starting = true;
 
         const size = { width: this.camV.pw, height: this.camV.ph };
-        createNFTTracker(trackerConfig(this.data, size, resolveUrl(this.data.cameraParam)))
-            .then((tracker) => this._onTrackerReady(tracker))
+        const startData = this.data;
+        createNFTTracker(trackerConfig(startData, size, resolveUrl(startData.cameraParam)))
+            .then((tracker) => this._onTrackerReady(tracker, startData))
             .catch((err) => {
                 // Allow a later _maybeStart() to retry instead of blocking forever.
                 this.starting = false;
@@ -204,14 +214,17 @@ AFRAME.registerSystem('arnft', {
     },
 
     /**
-     * The tracker is ready: apply its projection and load the registered targets.
+     * The tracker is ready: apply its projection, catch it up on any setting
+     * changed while it was starting, and load the registered targets.
      *
      * @param {import('@webarkit/jsartoolkit-nft').NFTTracker} tracker
+     * @param {object} [startData] The settings it was created with.
      * @private
      */
-    _onTrackerReady: function (tracker) {
+    _onTrackerReady: function (tracker, startData = this.data) {
         this.tracker = tracker;
         this._setupCamera();
+        this._applySettings(startData);
         this._loadPendingMarkers();
     },
 

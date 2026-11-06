@@ -54,20 +54,24 @@ function loadMarker(tracker, registry, marker, onLoaded, onFailed) {
         onFailed(marker, reason);
     };
 
+    const onResult = ([load]) => {
+        if (load.status !== 'loaded') {
+            fail(`${load.reason}: ${load.message}`);
+            return;
+        }
+        const { id, widthPx, heightPx, dpi } = load.info;
+        const data = { width: widthPx, height: heightPx, dpi };
+        // null when the <a-nft> was removed while loading: the registry keeps
+        // the target for reuse, and there is no component left to notify.
+        if (registry.setLoaded(marker, id, data)) {
+            onLoaded(marker, data);
+        }
+    };
+
+    // fail only sees a load that failed. A throw from onLoaded is a separate
+    // problem: the target did load and is tracked.
     tracker
         .addNFTTargets([marker.url], { origin: 'corner' })
-        .then(([load]) => {
-            if (load.status !== 'loaded') {
-                fail(`${load.reason}: ${load.message}`);
-                return;
-            }
-            const { id, widthPx, heightPx, dpi } = load.info;
-            const data = { width: widthPx, height: heightPx, dpi };
-            // null when the <a-nft> was removed while loading: the registry keeps
-            // the target for reuse, and there is no component left to notify.
-            if (registry.setLoaded(marker, id, data)) {
-                onLoaded(marker, data);
-            }
-        })
-        .catch(fail);
+        .then(onResult, fail)
+        .catch((err) => console.error(`arnft: NFT marker "${marker.name}" loaded, but its <a-nft> could not use it`, err));
 }
