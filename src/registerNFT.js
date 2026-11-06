@@ -579,7 +579,8 @@ AFRAME.registerComponent('arnft-lifecycle', {
  * 3. the result is written to the entity's matrix.
  *
  * The content stays hidden until the first pose, and is hidden again when the
- * target is lost or the component is removed.
+ * target is lost or the component is removed. While the entity is paused, poses
+ * are ignored and the content stays where it is.
  */
 AFRAME.registerComponent('nft-anchor', {
     dependencies: ['arnft'],
@@ -622,6 +623,16 @@ AFRAME.registerComponent('nft-anchor', {
             url: this.data.markerUrl,
             component: this,
         });
+    },
+
+    /**
+     * `onPose()` ignores poses while the entity is paused, so smoothing starts again
+     * afterwards rather than easing in from the pose it stopped at.
+     */
+    pause: function () {
+        if (this.filter) {
+            this.filter.reset();
+        }
     },
 
     /**
@@ -768,6 +779,13 @@ AFRAME.registerComponent('nft-anchor', {
      * @param {number} time Time (ms) of the frame this pose comes from.
      */
     onPose: function (matrixGL_RH, time) {
+        // A paused entity keeps its content where it is, but its poses still arrive,
+        // because they come from the `arnft` system. This reads `el.isPlaying` rather
+        // than a flag set by pause() and play(): A-Frame calls pause() when an entity
+        // is removed, and no play() when the same entity is appended again.
+        if (!this.el.isPlaying) {
+            return;
+        }
         let elements = toMatrixElements(matrixGL_RH);
         if (elements === null) {
             console.error('nft-anchor: invalid matrixGL_RH', matrixGL_RH);

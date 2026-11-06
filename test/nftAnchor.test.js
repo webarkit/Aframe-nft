@@ -73,9 +73,11 @@ const smoothing = { smooth: true, smoothMinCutoff: 0.0001, smoothBeta: 0.01 };
 
 // A fresh anchor, as A-Frame creates it: init(), then update({}). Its object3D
 // starts the way A-Frame's does: visible, with its matrix built from its own
-// position, rotation and scale.
-function startedAnchor(data = {}, arnft = { registerMarker: () => ({}) }) {
-    const anchor = Object.assign(Object.create(definitions['nft-anchor']), {
+// position, rotation and scale. A-Frame's Component gives every component a
+// play() and a pause(), which a definition may replace.
+function createdAnchor(data = {}, arnft = { registerMarker: () => ({}) }) {
+    const definition = { play() {}, pause() {}, ...definitions['nft-anchor'] };
+    const anchor = Object.assign(Object.create(definition), {
         el: {
             object3D: {
                 visible: true,
@@ -89,6 +91,24 @@ function startedAnchor(data = {}, arnft = { registerMarker: () => ({}) }) {
     });
     anchor.init();
     anchor.update({});
+    return anchor;
+}
+
+// What el.play() and el.pause() do: the entity's flag, then the component's hook.
+function playEntity(anchor) {
+    anchor.el.isPlaying = true;
+    anchor.play();
+}
+
+function pauseEntity(anchor) {
+    anchor.el.isPlaying = false;
+    anchor.pause();
+}
+
+// An anchor on a playing entity: A-Frame plays it right after the above.
+function startedAnchor(data, arnft) {
+    const anchor = createdAnchor(data, arnft);
+    playEntity(anchor);
     return anchor;
 }
 
@@ -157,6 +177,77 @@ describe('nft-anchor visibility', () => {
         // The target never left the view, so the tracker fires no new `found`.
         routeFrameResult(arnft.registry, { time: 2, targets: [{ id: 0, found: true, pose }], transitions: [] });
         expect(second.mesh.visible).toBe(true);
+    });
+});
+
+describe('nft-anchor pause and play', () => {
+    // The system keeps routing poses to a paused entity: only its tick stops.
+    const first = Float64Array.from({ length: 16 }, (_, i) => i + 1);
+    const second = Float64Array.from({ length: 16 }, (_, i) => i + 101);
+
+    it('keeps the content at its last pose while the entity is paused', () => {
+        const anchor = startedAnchor();
+        anchor.onPose(first, 1);
+        pauseEntity(anchor);
+        anchor.onPose(second, 2);
+        expect(anchor.mesh.matrix.elements).toEqual(Array.from(first));
+        expect(anchor.mesh.visible).toBe(true);
+    });
+
+    it('follows the next pose after the entity plays again', () => {
+        const anchor = startedAnchor();
+        anchor.onPose(first, 1);
+        pauseEntity(anchor);
+        playEntity(anchor);
+        anchor.onPose(second, 2);
+        expect(anchor.mesh.matrix.elements).toEqual(Array.from(second));
+    });
+
+    it('does not show content for a pose that arrives while paused', () => {
+        const anchor = startedAnchor();
+        pauseEntity(anchor);
+        anchor.onPose(first, 1);
+        expect(anchor.mesh.visible).toBe(false);
+        expect(anchor.mesh.matrixAutoUpdate).toBe(true);
+    });
+
+    it('ignores poses until the entity plays, which a paused parent delays', () => {
+        const anchor = createdAnchor();
+        anchor.onPose(first, 1);
+        expect(anchor.mesh.visible).toBe(false);
+        playEntity(anchor);
+        anchor.onPose(first, 2);
+        expect(anchor.mesh.visible).toBe(true);
+    });
+
+    it('takes poses on a playing entity even if pause() ran with no play() after it', () => {
+        // Removing an <a-nft> calls the component's pause() and leaves the entity
+        // playing. Appending it again calls no play(), so a flag set by those hooks
+        // would stay set and hide the content for good once #15 registers it again.
+        const anchor = startedAnchor();
+        anchor.pause();
+        anchor.onPose(first, 1);
+        expect(anchor.mesh.visible).toBe(true);
+    });
+
+    it('still hides the content when the target is lost while paused', () => {
+        const anchor = startedAnchor();
+        anchor.onPose(first, 1);
+        pauseEntity(anchor);
+        anchor.onLost();
+        expect(anchor.mesh.visible).toBe(false);
+    });
+
+    it('starts smoothing afresh, not from the pose it stopped at', () => {
+        // At the default cutoff the filter would creep from the stale pose for a long time.
+        const anchor = startedAnchor();
+        const reset = vi.spyOn(anchor.filter, 'reset');
+        pauseEntity(anchor);
+        expect(reset).toHaveBeenCalled();
+    });
+
+    it('pauses with smoothing turned off', () => {
+        expect(() => pauseEntity(startedAnchor({ smooth: false }))).not.toThrow();
     });
 });
 
