@@ -61,6 +61,43 @@ describe('MarkerRegistry load state', () => {
     });
 });
 
+describe('MarkerRegistry for a new tracker', () => {
+    it('hasLoaded is false until a registered record has an id', () => {
+        const r = new MarkerRegistry();
+        const a = r.add(marker('a'));
+        expect(r.hasLoaded()).toBe(false);
+        r.setLoaded(a, 0, size);
+        expect(r.hasLoaded()).toBe(true);
+        r.remove(a);
+        expect(r.hasLoaded()).toBe(false);
+    });
+
+    it('resetLoadState offers every record for loading again, parked ids forgotten', () => {
+        // Ids belong to one tracker: on the next one they would mean other targets.
+        const r = new MarkerRegistry();
+        const a = r.setLoaded(r.add(marker('a')), 0, size);
+        r.remove(r.setLoaded(r.add(marker('b')), 1, size));
+        const before = r.generation;
+        r.resetLoadState();
+        expect(r.generation).toBe(before + 1);
+        expect(a.id).toBeNull();
+        expect(a.data).toBeNull();
+        expect(r.get(0)).toBeNull();
+        expect(r.unloaded()).toEqual([a]);
+        expect(r.add(marker('b')).id).toBeNull();
+    });
+
+    it('resetLoadState also offers a record that was loading or had failed', () => {
+        const r = new MarkerRegistry();
+        const loading = r.add(marker('a'));
+        r.markLoading(loading);
+        const failed = r.add(marker('b'));
+        r.markLoadFailed(failed);
+        r.resetLoadState();
+        expect(r.unloaded()).toEqual([loading, failed]);
+    });
+});
+
 describe('MarkerRegistry removal', () => {
     it('stops routing poses to a removed marker', () => {
         const r = new MarkerRegistry();

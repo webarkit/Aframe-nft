@@ -5,9 +5,8 @@ import { MarkerRegistry } from '../src/markerRegistry.js';
 vi.mock('aframe', () => ({}));
 vi.mock('@webarkit/jsartoolkit-nft', () => ({ createNFTTracker: vi.fn() }));
 
-// Records every PoseFilter construction. Each one means an extra
-// "OneEuroFilter: <version>" console line from the package, and a reset of
-// the smoothing state.
+// Records every PoseFilter construction. Each one means a reset of the
+// smoothing state.
 const createdFilters = vi.hoisted(() => []);
 vi.mock('../src/poseFilter.js', () => ({
     PoseFilter: class {
