@@ -63,6 +63,36 @@ export class MarkerRegistry {
          * @type {Map<string, {id: number, data: NFTData}[]>}
          */
         this._parked = new Map();
+        /**
+         * Bumped when the load state starts over for a new tracker. A load that
+         * started under an earlier generation has nothing left to report.
+         * @type {number}
+         */
+        this.generation = 0;
+    }
+
+    /**
+     * @returns {boolean} Whether any registered marker has a target to track.
+     */
+    hasLoaded() {
+        return this.markers.some((m) => m.id !== null);
+    }
+
+    /**
+     * Start the load state over, for a new tracker: ids belong to one tracker, and on
+     * the next one they would mean other targets. Every registered marker is offered
+     * for loading again, including one whose load had failed.
+     */
+    resetLoadState() {
+        this.generation++;
+        this._byId.clear();
+        this._parked.clear();
+        for (const marker of this.markers) {
+            marker.id = null;
+            marker.data = null;
+            marker.loading = false;
+            marker.failed = false;
+        }
     }
 
     /**

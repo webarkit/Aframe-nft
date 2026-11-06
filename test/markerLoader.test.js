@@ -140,6 +140,47 @@ describe('loadPendingMarkers', () => {
     });
 });
 
+describe('loadPendingMarkers after a removal', () => {
+    it('does not report a failed load for a marker already removed', async () => {
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        registry.remove(a);
+        tracker.requests[0].resolve([{ status: 'error', url: 'DataNFT/a', reason: 'network', message: '404' }]);
+        await flush();
+        expect(handlers.onFailed).not.toHaveBeenCalled();
+    });
+});
+
+describe('loadPendingMarkers when the tracker was replaced', () => {
+    it('ignores a load that finishes after resetLoadState', async () => {
+        const { tracker, registry, markers: [a, b], handlers } = setup('a', 'b');
+        loadPendingMarkers(tracker, registry, handlers);
+        registry.resetLoadState();
+        tracker.requests[0].resolve(loaded(0));
+        tracker.requests[1].reject(new Error('NFTTracker: disposed'));
+        await flush();
+        expect(a.id).toBeNull();
+        expect(b.failed).toBe(false);
+        expect(handlers.onLoaded).not.toHaveBeenCalled();
+        expect(handlers.onFailed).not.toHaveBeenCalled();
+    });
+
+    it('does not let an old answer touch the newer load of the same marker', async () => {
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        registry.resetLoadState();
+        loadPendingMarkers(tracker, registry, handlers);
+        expect(tracker.requests).toHaveLength(2);
+
+        tracker.requests[0].reject(new Error('NFTTracker: disposed'));
+        tracker.requests[1].resolve(loaded(7));
+        await flush();
+        expect(a.failed).toBe(false);
+        expect(a.id).toBe(7);
+        expect(handlers.onLoaded).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe('loadPendingMarkers on a load that does not answer', () => {
     let warn;
 
@@ -185,6 +226,14 @@ describe('loadPendingMarkers on a load that does not answer', () => {
         loadPendingMarkers(tracker, registry, handlers);
         tracker.requests[0].resolve(loaded(0));
         tracker.requests[1].resolve([{ status: 'error', url: 'DataNFT/b', reason: 'network', message: '404' }]);
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('stays quiet about a load belonging to a replaced tracker', async () => {
+        const { tracker, registry, handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        registry.resetLoadState();
         await vi.advanceTimersByTimeAsync(30000);
         expect(warn).not.toHaveBeenCalled();
     });
