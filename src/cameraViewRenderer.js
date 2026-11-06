@@ -135,7 +135,7 @@ export class cameraViewRenderer {
      *
      * The same ImageData is returned until the frame-rate gate captures a new
      * one, instead of a fresh copy per call. That is safe because
-     * `ARControllerNFT.process()` copies the pixels into the WASM heap
+     * the tracker's `process()` copies the pixels into the WASM heap
      * synchronously (`passVideoData` → `HEAPU8.set`) and keeps no reference.
      * Callers must not mutate it.
      *

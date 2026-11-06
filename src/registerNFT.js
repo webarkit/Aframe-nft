@@ -16,13 +16,15 @@
  * @module registerNFT
  */
 import 'aframe';
-import { ARControllerNFT } from '@webarkit/jsartoolkit-nft';
+import { createNFTTracker } from '@webarkit/jsartoolkit-nft';
 import { cameraViewRenderer } from './cameraViewRenderer';
 import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
 import { PoseFilter } from './poseFilter';
 import { MarkerRegistry } from './markerRegistry';
 import { loadPendingMarkers } from './markerLoader';
-import { DEFAULT_LOG_LEVEL, LOG_LEVEL_NAMES, toARLogLevel } from './logLevel';
+import { routeFrameResult } from './frames';
+import { runtimePatch, trackerConfig } from './trackerSettings';
+import { DEFAULT_LOG_LEVEL, LOG_LEVEL_NAMES } from './logLevel';
 
 /**
  * Resolve a marker or camera path against the HTML page, like any other asset
@@ -56,20 +58,19 @@ AFRAME.registerSystem('arnft', {
         // ARToolKit camera parameter file, resolved against the page.
         cameraParam: { type: 'string', default: 'Data/camera_para.dat' },
         // How long (ms) a marker may go without a pose before its mesh is hidden.
-        // Matches jsartoolkitNFT's own MARKER_LOST_TIME.
+        // The tracker's own default.
         lostTimeout: { type: 'number', default: 200 },
-        // Detection policy (jsartoolkitNFT 1.13.0): while some markers are
-        // tracked and others are not, look for the missing ones at most every
-        // `detectionInterval` ms (0 = every frame). continuousDetection: false
-        // stops looking while anything is tracked — cheapest, but a second
-        // target entering the view is not found.
+        // Detection policy: while some markers are tracked and others are not,
+        // look for the missing ones at most every `detectionInterval` ms (0 =
+        // every frame). continuousDetection: false stops looking while anything
+        // is tracked — cheapest, but a second target entering the view is not
+        // found.
         continuousDetection: { type: 'boolean', default: true },
         detectionInterval: { type: 'number', default: 300 },
         // Verbosity of ARToolKit's console lines ("[info] Tracked page 0" and
         // the like, printed on every frame at info): debug, info, warn or
-        // error. It does not reach jsartoolkitNFT's start-up lines, which print
-        // before it can be applied, nor its "webarkit-info" lines
-        // (webarkit/jsartoolkitNFT#677).
+        // error. WebARKitLib's camera parameter table still prints at every
+        // level (webarkit/WebARKitLib#113).
         logLevel: { type: 'string', default: DEFAULT_LOG_LEVEL, oneOf: LOG_LEVEL_NAMES },
     },
 
@@ -81,7 +82,7 @@ AFRAME.registerSystem('arnft', {
     init: function () {
         this.video = document.getElementById('video');
         this.camV = new cameraViewRenderer(this.video);
-        this.controller = null;
+        this.tracker = null;
         this.videoReady = false;
         this.starting = false;
         // Markers registered by <a-nft> components: load state + visibility.
@@ -102,12 +103,52 @@ AFRAME.registerSystem('arnft', {
     },
 
     /**
+     * Apply the settings that can change while tracking runs. A-Frame also calls
+     * this from the system's constructor, before any tracker exists: the initial
+     * values then reach the tracker through `trackerConfig()`.
+     *
+     * `setAttribute('arnft', key, value)` does not work on a system: A-Frame drops
+     * the value and turns `this.data` into the bare key, so the previous settings
+     * are restored here. A-Frame rebuilds the data from what is passed, so with a
+     * partial `'key: value'` string the other settings go back to their defaults.
+     *
+     * @param {object} oldData Previous property values.
+     */
+    update: function (oldData) {
+        if (typeof this.data !== 'object') {
+            console.warn(
+                `arnft: setAttribute('arnft', key, value) is not supported; ` +
+                    `use setAttribute('arnft', 'key: value') instead`,
+            );
+            this.data = oldData;
+            return;
+        }
+        if (this.tracker) {
+            this._applySettings(oldData);
+        }
+    },
+
+    /**
+     * Send the tracker whichever runtime settings differ from `oldData`.
+     *
+     * @param {object} oldData The settings the tracker has now.
+     * @private
+     */
+    _applySettings: function (oldData) {
+        const patch = runtimePatch(oldData, this.data);
+        if (patch) {
+            this.tracker
+                .configure(patch)
+                .catch((err) => console.error('arnft: could not apply the new settings', err));
+        }
+    },
+
+    /**
      * Register a target. Called by `nft-anchor` components during their own
      * `init()`.
      *
-     * Targets can be registered at any time: since jsartoolkitNFT 1.13.0 they
-     * load incrementally (webarkit/jsartoolkitNFT#612), so an `<a-nft>` added
-     * after tracking has started is loaded on the spot.
+     * Targets can be registered at any time: an `<a-nft>` added after tracking
+     * has started is loaded on the spot.
      *
      * @param {{name: string, url: string, component: object}} marker `url` may
      *     be relative to the page; `component` is the calling `nft-anchor`.
@@ -123,8 +164,8 @@ AFRAME.registerSystem('arnft', {
         });
         if (record.id !== null) {
             // A re-added <a-nft>: its target is still loaded in the tracker.
-            record.component.onData(this.controller.getNFTData(record.id));
-        } else if (this.controller) {
+            record.component.onData(record.data);
+        } else if (this.tracker) {
             this._loadPendingMarkers();
         } else {
             this._maybeStart();
@@ -153,7 +194,7 @@ AFRAME.registerSystem('arnft', {
     _maybeStart: function () {
         if (
             this.starting ||
-            this.controller ||
+            this.tracker ||
             !this.videoReady ||
             this.registry.markers.length === 0
         ) {
@@ -161,9 +202,10 @@ AFRAME.registerSystem('arnft', {
         }
         this.starting = true;
 
-        const cameraParamUrl = resolveUrl(this.data.cameraParam);
-        ARControllerNFT.initWithDimensions(this.camV.pw, this.camV.ph, cameraParamUrl, true)
-            .then((ar) => this._onControllerReady(ar))
+        const size = { width: this.camV.pw, height: this.camV.ph };
+        const startData = this.data;
+        createNFTTracker(trackerConfig(startData, size, resolveUrl(startData.cameraParam)))
+            .then((tracker) => this._onTrackerReady(tracker, startData))
             .catch((err) => {
                 // Allow a later _maybeStart() to retry instead of blocking forever.
                 this.starting = false;
@@ -172,35 +214,17 @@ AFRAME.registerSystem('arnft', {
     },
 
     /**
-     * The tracker is ready: apply its projection and detection settings, route
-     * its poses to the components, and load the registered targets.
+     * The tracker is ready: apply its projection, catch it up on any setting
+     * changed while it was starting, and load the registered targets.
      *
-     * @param {import('@webarkit/jsartoolkit-nft').ARControllerNFT} ar
+     * @param {import('@webarkit/jsartoolkit-nft').NFTTracker} tracker
+     * @param {object} [startData] The settings it was created with.
      * @private
      */
-    _onControllerReady: function (ar) {
-        this.controller = ar;
-        // First, so everything ARToolKit logs from here on follows it.
-        ar.setLogLevel(toARLogLevel(this.data.logLevel));
+    _onTrackerReady: function (tracker, startData = this.data) {
+        this.tracker = tracker;
         this._setupCamera();
-
-        // jsartoolkitNFT 1.13.0 tracks every loaded marker at once; these set
-        // how often it looks for the ones not tracked yet.
-        ar.setContinuousDetection(this.data.continuousDetection);
-        ar.setDetectionInterval(this.data.detectionInterval);
-
-        // There is deliberately no 'lostNFTMarker' listener: visibility is
-        // derived from pose timestamps in tick() instead. That behaves the same
-        // on any jsartoolkitNFT version (before 1.13.0 the event was
-        // single-marker, webarkit/jsartoolkitNFT#611), and `lostTimeout` stays
-        // tunable where upstream's timeout is fixed at 200 ms.
-        ar.addEventListener('getNFTMarker', (ev) => {
-            const marker = this.registry.markSeen(ev.data.index, performance.now());
-            if (marker) {
-                marker.component.onPose(ev.data.matrixGL_RH);
-            }
-        });
-
+        this._applySettings(startData);
         this._loadPendingMarkers();
     },
 
@@ -211,11 +235,10 @@ AFRAME.registerSystem('arnft', {
      * @private
      */
     _loadPendingMarkers: function () {
-        const ar = this.controller;
-        if (!ar) {
+        if (!this.tracker) {
             return;
         }
-        loadPendingMarkers(ar, this.registry, {
+        loadPendingMarkers(this.tracker, this.registry, {
             onLoaded: (marker, data) => marker.component.onData(data),
             onFailed: (marker, reason) =>
                 console.error(
@@ -229,7 +252,7 @@ AFRAME.registerSystem('arnft', {
     /**
      * Compute and store the tracker's projection matrix for the A-Frame camera.
      *
-     * `getCameraMatrix()` targets the full `pw` × `ph` processing canvas, but
+     * `cameraMatrix` targets the full `pw` × `ph` processing canvas, but
      * the video content is drawn letterboxed at `w` × `h` inside it. Scaling by
      * `pw / w` (x) and `ph / h` (y) undoes that padding, giving the intrinsic
      * projection at the video's true aspect.
@@ -250,7 +273,7 @@ AFRAME.registerSystem('arnft', {
         const cv = this.camV;
         const ratioW = cv.pw / cv.w;
         const ratioH = cv.ph / cv.h;
-        const proj = Array.from(this.controller.getCameraMatrix());
+        const proj = Array.from(this.tracker.cameraMatrix);
         proj[0] *= ratioW;
         proj[4] *= ratioW;
         proj[8] *= ratioW;
@@ -348,23 +371,16 @@ AFRAME.registerSystem('arnft', {
 
     /**
      * Per frame: keep the layout and projection in sync, run one detection and
-     * tracking pass, then hide the targets that stopped being seen.
-     * `process()` reads the processing frame; each tracked target fires the
-     * `getNFTMarker` listener registered in `_onControllerReady`.
+     * tracking pass on the processing frame, and hand the poses and `lost`
+     * transitions to the components.
      */
     tick: function () {
-        if (!this.controller || !this.videoReady) {
+        if (!this.tracker || !this.videoReady) {
             return;
         }
         this._resize();
         this._applyProjection();
-        // process() dispatches getNFTMarker synchronously for every marker it
-        // finds, so the registry is up to date before we check for stale ones.
-        this.controller.process(this.camV.getImage());
-
-        for (const marker of this.registry.collectStale(performance.now(), this.data.lostTimeout)) {
-            marker.component.onLost();
-        }
+        routeFrameResult(this.registry, this.tracker.process(this.camV.getImage(), performance.now()));
     },
 });
 
@@ -559,15 +575,16 @@ AFRAME.registerComponent('nft-anchor', {
      * combined with the post-matrix, and cached for `tick()`.
      *
      * @param {ArrayLike<number>} matrixGL_RH 4×4 pose matrix from jsartoolkitNFT.
+     * @param {number} time Time (ms) of the frame this pose comes from.
      */
-    onPose: function (matrixGL_RH) {
+    onPose: function (matrixGL_RH, time) {
         let elements = toMatrixElements(matrixGL_RH);
         if (elements === null) {
             console.error('nft-anchor: invalid matrixGL_RH', matrixGL_RH);
             return;
         }
         if (this.filter) {
-            elements = this.filter.filter(performance.now(), elements);
+            elements = this.filter.filter(time, elements);
         }
         const m = new AFRAME.THREE.Matrix4();
         m.elements = elements;

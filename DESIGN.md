@@ -1,7 +1,8 @@
 # Aframe-nft — Design & Improvement Plan
 
 > Status: **Implemented.** Phase 2 (jsartoolkitNFT + Vite) is the current codebase; multi-target
-> tracking and runtime-added targets followed with jsartoolkitNFT 1.13.0 (section 10).
+> tracking and runtime-added targets followed with jsartoolkitNFT 1.13.0, and the tracker API with
+> 1.16.0 (section 10).
 > This document keeps the design history and the reasons behind the decisions. Sections 1–9
 > describe the plan as written on 2026-07-01, so parts of them (for example "single marker
 > per scene") have since been superseded. For how to *use* the library, see the
@@ -176,9 +177,9 @@ Decisions made during Phase 2 (see also Decision Log):
   **jsartoolkitNFT 1.13.0 lifts all three**:
   - `lostNFTMarker` was single-marker
     ([jsartoolkitNFT#611](https://github.com/webarkit/jsartoolkitNFT/issues/611)). It is
-    per-marker since 1.13.0, but we still derive visibility from pose timestamps
-    (`lostTimeout`): it is tunable where the upstream timeout is fixed at 200 ms, and it
-    behaves the same on any library version.
+    per-marker since 1.13.0. We first derived visibility from pose timestamps instead,
+    because its timeout was fixed at 200 ms; since 1.16.0 the tracker API's `lost` transitions
+    do this, with a tunable `lostTimeout` (see below).
   - `addNFTMarkers` was single-call
     ([#612](https://github.com/webarkit/jsartoolkitNFT/issues/612)). Fixed in 1.13.0 (#666):
     ids continue across calls and earlier markers stay loaded. Markers now load **one call
@@ -191,6 +192,16 @@ Decisions made during Phase 2 (see also Decision Log):
 
   jsartoolkitNFT cannot unload a marker and holds at most 20, so a removed `<a-nft>` parks
   its tracker id in `MarkerRegistry`, and re-adding the same `url` reuses it.
+- ✅ **Tracker API (jsartoolkitNFT 1.16.0).** `createNFTTracker` replaces `ARControllerNFT`, which
+  has no `dispose()` ([#780](https://github.com/webarkit/jsartoolkitNFT/issues/780)). Targets load
+  through `addNFTTargets`, whose per-source results say why a load failed. `process()` returns the
+  poses and debounced `lost` transitions, so the pose-timestamp bookkeeping is gone: its rule is the
+  same, more than `lostTimeout` ms untracked. `found` is not used, because a re-added `<a-nft>` can
+  adopt a target already tracked, which fires no new `found`. `tracker.configure()` applies runtime
+  changes (#13). The smoothing stack is unchanged: the tracker's `'native'` filter plus the per-anchor
+  1€ filter, because the tracker's own `filter` setting is per tracker and cannot express per-`<a-nft>`
+  settings. Checked when migrating: in Chromium on the default build, controller and tracker gave
+  identical poses over 40 frames (maximum absolute difference 0), and the camera matrix is identical.
 - ✅ **`getImage()` returns the captured frame instead of a per-call copy** (#6) — safe
   because `process()` copies the pixels into the WASM heap synchronously.
 - Worker-based detection (Approach A) as a perf optimization (#7). Re-evaluate against
