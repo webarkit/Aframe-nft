@@ -1,5 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { routeFrameResult } from '../src/frames.js';
+import { nextFrame, routeFrameResult } from '../src/frames.js';
+
+describe('nextFrame', () => {
+    it('returns the frame when camera-view really captured one', () => {
+        const view = {
+            frame: 5,
+            getImage() {
+                this.frame++;
+                return 'new';
+            },
+        };
+        expect(nextFrame(view)).toBe('new');
+    });
+
+    it('returns null when the frame-rate gate gave back the last frame', () => {
+        const view = { frame: 5, getImage: () => 'copy of the last frame' };
+        expect(nextFrame(view)).toBeNull();
+    });
+});
 
 describe('routeFrameResult', () => {
     const pose = new Float64Array(16);

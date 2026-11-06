@@ -57,12 +57,26 @@ export function loadPendingMarkers(tracker, registry, { onLoaded, onFailed }) {
 function loadMarker(tracker, registry, marker, onLoaded, onFailed) {
     registry.markLoading(marker);
 
+    // After resetLoadState the tracker behind this load is gone, and the marker may
+    // already be loading again on the next one: this load has nothing left to say.
+    const generation = registry.generation;
+    const isStale = () => registry.generation !== generation;
+
     const fail = (reason) => {
+        if (isStale()) {
+            return;
+        }
         registry.markLoadFailed(marker);
-        onFailed(marker, reason);
+        // No message for an <a-nft> that is already gone.
+        if (registry.has(marker)) {
+            onFailed(marker, reason);
+        }
     };
 
     const onResult = ([load]) => {
+        if (isStale()) {
+            return;
+        }
         if (load.status !== 'loaded') {
             fail(`${load.reason}: ${load.message}`);
             return;
@@ -77,7 +91,7 @@ function loadMarker(tracker, registry, marker, onLoaded, onFailed) {
     };
 
     const slowLoad = setTimeout(() => {
-        if (registry.has(marker)) {
+        if (!isStale() && registry.has(marker)) {
             console.warn(
                 `arnft: NFT marker "${marker.name}" (${marker.url}) has not loaded after ` +
                     `${SLOW_LOAD_MS / 1000} s; still waiting for the server`,

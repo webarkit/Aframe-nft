@@ -202,8 +202,17 @@ Decisions made during Phase 2 (see also Decision Log):
   1€ filter, because the tracker's own `filter` setting is per tracker and cannot express per-`<a-nft>`
   settings. Checked when migrating: in Chromium on the default build, controller and tracker gave
   identical poses over 40 frames (maximum absolute difference 0), and the camera matrix is identical.
-- ✅ **`getImage()` returns the captured frame instead of a per-call copy** (#6) — safe
-  because `process()` copies the pixels into the WASM heap synchronously.
+- ✅ **Camera through `@webarkit/camera-view`.** `CameraView` replaces the private
+  `cameraViewRenderer`, with the same frame geometry. `projectionFor` replaces the hand scaling of
+  the camera matrix, and gives exactly the same numbers. `videoWidth` / `videoHeight` stay `ideal`
+  capture sizes through its `deps.mediaDevices`, because it only sends a width range. Its `getImage()`
+  returns a new copy on every call, which partly undoes the fix for #6 (one `ImageData` reused between
+  captures). That is accepted: repeated frames skip `process()` (#12), so the cost is one 307 KB copy,
+  tiny next to a detection pass, and a fresh copy is what a Worker needs anyway. The frame counter
+  follows the frame-rate gate, not the camera, so a camera slower than `targetFrameRate` can still
+  have a picture processed twice. Teardown (#16) hangs on an internal `arnft-lifecycle` component on
+  the scene, because A-Frame never calls `remove()` on a system. That component does not run before
+  the scene has loaded, so a `MutationObserver` covers that time.
 - Worker-based detection (Approach A) as a perf optimization (#7). Re-evaluate against
   jsartoolkitNFT's threaded build (`@webarkit/jsartoolkit-nft/td`), which since 1.13.0 runs
   detection off the main thread but uses pthreads (SharedArrayBuffer, so the page must be

@@ -17,12 +17,13 @@
  */
 import 'aframe';
 import { createNFTTracker } from '@webarkit/jsartoolkit-nft';
-import { cameraViewRenderer } from './cameraViewRenderer';
+import { CameraView } from '@webarkit/camera-view';
+import { withIdealSize } from './cameraConstraints';
 import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
 import { PoseFilter } from './poseFilter';
 import { MarkerRegistry } from './markerRegistry';
 import { loadPendingMarkers } from './markerLoader';
-import { routeFrameResult } from './frames';
+import { nextFrame, routeFrameResult } from './frames';
 import { runtimePatch, trackerConfig } from './trackerSettings';
 import { DEFAULT_LOG_LEVEL, LOG_LEVEL_NAMES } from './logLevel';
 
@@ -47,8 +48,8 @@ function resolveUrl(path) {
  * Page requirements:
  * - a `<video id="video">` element, which receives the camera feed;
  * - an `embedded` scene, so the canvas can be sized to match the video;
- * - an `<a-camera>` (or `[camera]` entity) at the origin with `look-controls`
- *   disabled. The tracker's projection is applied to it.
+ * - a `[camera]` entity (or an `<a-camera>` with `look-controls` disabled) at the
+ *   origin. The tracker's projection is applied to it.
  */
 AFRAME.registerSystem('arnft', {
     schema: {
@@ -81,25 +82,82 @@ AFRAME.registerSystem('arnft', {
      */
     init: function () {
         this.video = document.getElementById('video');
-        this.camV = new cameraViewRenderer(this.video);
+        this.view = new CameraView(this.video, {
+            mediaDevices: withIdealSize(navigator.mediaDevices, {
+                width: this.data.videoWidth,
+                height: this.data.videoHeight,
+            }),
+        });
         this.tracker = null;
         this.videoReady = false;
         this.starting = false;
-        // Markers registered by <a-nft> components: load state + visibility.
+        // No tracker will start any more: tracking failed, or the scene was removed.
+        this.stopped = false;
+        // Bumped when a tracker is stopped, so that a start still in flight knows
+        // it was overtaken.
+        this._generation = 0;
+        // Markers registered by <a-nft> components: load state and reusable ids.
         this.registry = new MarkerRegistry();
 
-        this.camV
-            .initialize({
-                facingMode: 'environment',
-                targetFrameRate: 60,
-                width: this.data.videoWidth,
-                height: this.data.videoHeight,
-            })
+        this.view.addEventListener('geometrychange', (event) => this._onGeometryChange(event.detail));
+        this.view.addEventListener('ended', () => this._onCameraEnded());
+        this.view
+            .initialize({ facingMode: 'environment', targetFrameRate: 60 })
             .then(() => {
                 this.videoReady = true;
                 this._maybeStart();
             })
-            .catch((err) => console.error('arnft: camera init failed', err));
+            .catch((err) => this._onCameraError(err));
+
+        // A-Frame never calls remove() on a system, so teardown hangs on a component:
+        // a scene being removed runs the remove() of its own components.
+        this.el.setAttribute('arnft-lifecycle', '');
+        this._watchRemovalBeforeLoad();
+    },
+
+    /**
+     * Cover the time before the scene has loaded, which can be seconds with
+     * `<a-assets>`. A-Frame only initialises a scene's components once it has loaded,
+     * and removing one that is not initialised waits for ever, so `arnft-lifecycle`
+     * does not run and the camera, which starts right away, would stay on.
+     *
+     * @private
+     */
+    _watchRemovalBeforeLoad: function () {
+        const observer = new MutationObserver(() => {
+            if (!this.el.isConnected) {
+                observer.disconnect();
+                this._teardown();
+            }
+        });
+        observer.observe(document, { childList: true, subtree: true });
+        this.el.addEventListener('loaded', () => observer.disconnect(), { once: true });
+    },
+
+    /**
+     * The camera could not start. A start cancelled by `_teardown()` is not a failure.
+     *
+     * @param {*} err The `getUserMedia` error or a `CameraViewError`.
+     * @private
+     */
+    _onCameraError: function (err) {
+        if (err && err.code === 'DESTROYED') {
+            return;
+        }
+        console.error('arnft: camera init failed', err);
+    },
+
+    /**
+     * The scene was removed: stop the camera and release the tracker. The system does
+     * not come back, so re-attaching a removed scene is not supported.
+     *
+     * @private
+     */
+    _teardown: function () {
+        this.stopped = true;
+        this.videoReady = false;
+        this._stopTracker();
+        this.view.destroy();
     },
 
     /**
@@ -193,6 +251,7 @@ AFRAME.registerSystem('arnft', {
      */
     _maybeStart: function () {
         if (
+            this.stopped ||
             this.starting ||
             this.tracker ||
             !this.videoReady ||
@@ -202,15 +261,124 @@ AFRAME.registerSystem('arnft', {
         }
         this.starting = true;
 
-        const size = { width: this.camV.pw, height: this.camV.ph };
+        const { frameWidth, frameHeight } = this.view.geometry;
+        this._frameSize = { width: frameWidth, height: frameHeight };
+        const cameraParam = this._cameraParam || resolveUrl(this.data.cameraParam);
         const startData = this.data;
-        createNFTTracker(trackerConfig(startData, size, resolveUrl(startData.cameraParam)))
-            .then((tracker) => this._onTrackerReady(tracker, startData))
+        const generation = this._generation;
+        createNFTTracker(trackerConfig(startData, this._frameSize, cameraParam))
+            .then((tracker) => {
+                if (generation !== this._generation) {
+                    tracker.dispose();
+                    return;
+                }
+                // Kept once it has worked: a partial setAttribute('arnft', 'key: value')
+                // returns cameraParam to its default, which a restart must not pick up.
+                this._cameraParam = cameraParam;
+                this._onTrackerReady(tracker, startData);
+            })
             .catch((err) => {
+                if (generation !== this._generation) {
+                    return;
+                }
                 // Allow a later _maybeStart() to retry instead of blocking forever.
                 this.starting = false;
                 console.error('arnft: tracker init failed', err);
             });
+    },
+
+    /**
+     * Stop the current tracker, or overtake a start still in flight. Every target
+     * will have to load again on the next one.
+     *
+     * @private
+     */
+    _stopTracker: function () {
+        const tracker = this.tracker;
+        this._generation++;
+        this.tracker = null;
+        this.starting = false;
+        this.registry.resetLoadState();
+        if (tracker) {
+            // Its dispose() lets a native teardown error reach the caller. Whatever
+            // called this still has to finish: stop the camera, start a new tracker.
+            try {
+                tracker.dispose();
+            } catch (err) {
+                console.error('arnft: could not release the tracker', err);
+            }
+        }
+    },
+
+    /**
+     * Replace the tracker, whose frame size is fixed when it is created.
+     *
+     * @private
+     */
+    _restartTracker: function () {
+        this._hideAll();
+        this._stopTracker();
+        this._maybeStart();
+    },
+
+    /**
+     * Hide the content of every target. The components hide their own mesh.
+     *
+     * @private
+     */
+    _hideAll: function () {
+        for (const marker of this.registry.markers) {
+            marker.component.onLost();
+        }
+    },
+
+    /**
+     * The video changed size, for example because a phone was rotated. With the same
+     * frame size only the projection changes. A new frame size needs a new tracker,
+     * because `camera_para` is scaled to it when the tracker is created.
+     *
+     * @param {import('@webarkit/camera-view').FrameGeometry} geometry
+     * @private
+     */
+    _onGeometryChange: function (geometry) {
+        // With no tracker and no start in flight, the next start reads the geometry.
+        if (!this.tracker && !this.starting) {
+            return;
+        }
+        const { width, height } = this._frameSize;
+        if (geometry.frameWidth !== width || geometry.frameHeight !== height) {
+            this._restartTracker();
+        } else if (this.tracker) {
+            this._setupCamera();
+        }
+    },
+
+    /**
+     * The camera stream ended: unplugged, or the permission was revoked. There are
+     * no more frames, so hide the content instead of leaving it frozen, and release
+     * the tracker. With `videoReady` false, no other one starts.
+     *
+     * @private
+     */
+    _onCameraEnded: function () {
+        this.videoReady = false;
+        this._hideAll();
+        this._stopTracker();
+        console.warn('arnft: the camera stream ended; tracking has stopped');
+    },
+
+    /**
+     * The tracker failed while running. This stops tracking for good, instead of
+     * repeating the same error on every frame of the render loop.
+     *
+     * @param {*} err
+     * @private
+     */
+    _onTrackerFailure: function (err) {
+        console.error('arnft: the tracker failed; tracking has stopped', err);
+        this.stopped = true;
+        this._hideAll();
+        this._stopTracker();
     },
 
     /**
@@ -252,14 +420,14 @@ AFRAME.registerSystem('arnft', {
     /**
      * Compute and store the tracker's projection matrix for the A-Frame camera.
      *
-     * `cameraMatrix` targets the full `pw` × `ph` processing canvas, but
-     * the video content is drawn letterboxed at `w` × `h` inside it. Scaling by
-     * `pw / w` (x) and `ph / h` (y) undoes that padding, giving the intrinsic
-     * projection at the video's true aspect.
+     * The tracker's own matrix targets the whole processing frame, where the video
+     * is letterboxed. `projectionFor` undoes that from the frame geometry, giving
+     * the projection at the video's true aspect. The viewport is given that same
+     * aspect, so no further scaling applies.
      *
-     * No further aspect correction is needed. Alignment comes from sizing the
-     * render canvas to the same box as the video (see `_resize`), the AR.js
-     * approach, so the overlay matches the video for any `camera_para`.
+     * Alignment comes from sizing the render canvas to the same box as the video
+     * (see `_resize`), the AR.js approach, so the overlay matches the video for any
+     * `camera_para`.
      *
      * @private
      */
@@ -270,18 +438,9 @@ AFRAME.registerSystem('arnft', {
             console.warn('arnft: no camera entity found to apply projection');
             return;
         }
-        const cv = this.camV;
-        const ratioW = cv.pw / cv.w;
-        const ratioH = cv.ph / cv.h;
-        const proj = Array.from(this.tracker.cameraMatrix);
-        proj[0] *= ratioW;
-        proj[4] *= ratioW;
-        proj[8] *= ratioW;
-        proj[12] *= ratioW;
-        proj[1] *= ratioH;
-        proj[5] *= ratioH;
-        proj[9] *= ratioH;
-        proj[13] *= ratioH;
+        const geometry = this.view.geometry;
+        const viewport = { width: geometry.videoWidth, height: geometry.videoHeight };
+        const proj = Array.from(this.tracker.projectionFor(viewport, geometry));
 
         // Re-assert both projection and sizing each frame (A-Frame's camera/render
         // systems recompute them on resize).
@@ -371,8 +530,9 @@ AFRAME.registerSystem('arnft', {
 
     /**
      * Per frame: keep the layout and projection in sync, run one detection and
-     * tracking pass on the processing frame, and hand the poses and `lost`
-     * transitions to the components.
+     * tracking pass on a new frame, and hand the poses and `lost` transitions to the
+     * components. With no target to track, or no new frame, there is nothing to do:
+     * a detection pass is the expensive step (webarkit/Aframe-nft#12).
      */
     tick: function () {
         if (!this.tracker || !this.videoReady) {
@@ -380,7 +540,31 @@ AFRAME.registerSystem('arnft', {
         }
         this._resize();
         this._applyProjection();
-        routeFrameResult(this.registry, this.tracker.process(this.camV.getImage(), performance.now()));
+        if (!this.registry.hasLoaded()) {
+            return;
+        }
+        let result;
+        try {
+            const frame = nextFrame(this.view);
+            if (!frame) {
+                return;
+            }
+            result = this.tracker.process(frame, performance.now());
+        } catch (err) {
+            this._onTrackerFailure(err);
+            return;
+        }
+        routeFrameResult(this.registry, result);
+    },
+});
+
+/**
+ * `arnft-lifecycle` component: internal, added to the scene by the `arnft` system,
+ * which has no removal hook of its own.
+ */
+AFRAME.registerComponent('arnft-lifecycle', {
+    remove: function () {
+        this.el.systems.arnft._teardown();
     },
 });
 

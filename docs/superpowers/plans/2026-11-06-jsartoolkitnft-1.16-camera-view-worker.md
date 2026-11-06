@@ -477,7 +477,7 @@ it('hides the content and stops reading frames when the camera ends', () => {
   - `_restartTracker`: `_hideAll()`, `_stopTracker()`, `_maybeStart()`.
   - `_maybeStart`: capture `_generation`. If it changed when the creation settles, a resolved tracker is disposed and a rejection is ignored, so an old start cannot touch `starting` or `tracker` of a newer one.
   - `_maybeStart` also keeps the `cameraParam` of the first start and reuses it on a restart: a partial `setAttribute('arnft', 'key: value')` resets `this.data.cameraParam` to its default, so a restart that read it could load the wrong file. Add a test for this.
-  - Guard `process()` in `tick`: a `RangeError` on a frame-size change must not repeat on every frame until `geometrychange` arrives.
+  - Guard `process()` in `tick`: an error must not repeat on every frame. As built, it logs once, hides the content and stops tracking. camera-view changes the frame size and dispatches `geometrychange` in the same step, so a size mismatch cannot reach `process()`.
   - `init`: `view.addEventListener('geometrychange', (e) => this._onGeometryChange(e.detail))` and `'ended'` to `_onCameraEnded`, which sets `videoReady = false`, calls `_hideAll()` and warns.
 - [ ] **Step 4:** Run `npm test`. Expected: PASS.
 - [ ] **Step 5:** Commit as `feat: skip repeated frames and follow camera changes` with `Fixes #12`.
