@@ -459,9 +459,8 @@ AFRAME.registerComponent('nft-anchor', {
      * change of `scaleFactor`, `lift`, the offsets or the smoothing parameters.
      * A change of `markerUrl` is not handled (webarkit/Aframe-nft#15).
      *
-     * The filter is rebuilt only when its own properties change. Rebuilding
-     * resets the smoothing state, and `@webarkit/oneeurofilter-ts` logs a line
-     * per construction.
+     * The filter is rebuilt only when its own properties change, because
+     * rebuilding resets the smoothing state.
      *
      * @param {object} oldData Previous property values; `{}` on the first call.
      */

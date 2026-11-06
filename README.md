@@ -373,7 +373,8 @@ flowchart LR
 | [`src/frames.js`](src/frames.js) | Routes each `process()` result to the `<a-nft>` components |
 | [`src/trackerSettings.js`](src/trackerSettings.js) | Turns `arnft` attributes into tracker settings |
 | [`src/nftMath.js`](src/nftMath.js) | Pose geometry: centring, lift, matrix normalisation |
-| [`src/poseFilter.js`](src/poseFilter.js) | 1€ pose smoothing, on top of [`@webarkit/oneeurofilter-ts`](https://github.com/webarkit/OneEuroFilter-ts) |
+| [`src/poseFilter.js`](src/poseFilter.js) | 1€ pose smoothing that keeps the pose rigid, on top of [`@webarkit/oneeurofilter-ts`](https://github.com/webarkit/OneEuroFilter-ts) |
+| [`src/so3.js`](src/so3.js) | Rotation maths for the smoothing: log, exp and re-orthogonalisation |
 | [`src/version.js`](src/version.js) | Version and start-up banner, injected from `package.json` at build time |
 | [`src/logLevel.js`](src/logLevel.js) | Maps the `logLevel` attribute to jsartoolkitNFT's `ARLogLevel` |
 

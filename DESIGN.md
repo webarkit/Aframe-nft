@@ -171,7 +171,11 @@ Decisions made during Phase 2 (see also Decision Log):
   exposed via `smooth` / `smoothMinCutoff` / `smoothBeta` on `nft-anchor` (on by default).
   First implemented in-house; now `src/poseFilter.js` wraps WebARKit's
   `@webarkit/oneeurofilter-ts`, converting the Hz cutoffs to the package's per-millisecond
-  units. `test/poseFilter.test.js` pins that the smoothing is unchanged.
+  units. It filters the rotation on its tangent space (`src/so3.js`) and the translation as a
+  vector, so the pose stays rigid, as jsartoolkitNFT 1.16 does for its own filter
+  ([jsartoolkitNFT#766](https://github.com/webarkit/jsartoolkitNFT/issues/766)). Filtering the 16
+  values one by one, as earlier versions did, gave the rotation scale and shear.
+  `test/poseFilter.test.js` pins the translation to the earlier output.
 - ✅ **Multi-marker — `<a-nft>` per target, visibility derived locally.** Several `<a-nft>`
   elements each anchor their own target. Three upstream constraints originally shaped this;
   **jsartoolkitNFT 1.13.0 lifts all three**:
