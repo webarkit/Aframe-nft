@@ -133,6 +133,8 @@ Notes:
 - **Relative paths.** Relative `url` and `cameraParam` paths resolve against the page, like
   any other asset URL.
 - **`autoplay muted playsinline`** are required on the video for mobile Safari.
+- **Removing the scene.** Removing `<a-scene>` stops the camera and releases the tracker. To
+  start again, create a new scene: re-attaching a removed one is not supported.
 
 ### Several targets
 
@@ -283,8 +285,12 @@ build and the jsartoolkitNFT version inside it.
 | Error | What it means |
 |---|---|
 | `NotAllowedError` | Camera permission was denied, or the page is not in a secure context (see the HTTPS note above). |
-| `NotReadableError` | The camera could not start, usually because another application is using it. Virtual cameras that cannot start (for example those installed by Meta Quest Link) are skipped automatically. |
+| `NotReadableError` | The camera could not start, usually because another application is using it. On a desktop the browser's default camera is used: if that is a virtual camera that cannot start, choose another one in the browser's settings. |
+| a `CameraViewError` with code `NOT_SUPPORTED` | The browser has no camera API. |
 | a `TypeError` mentioning `srcObject` | The page has no `<video id="video">` element. |
+
+**`arnft: the camera stream ended; tracking has stopped`.** The camera was unplugged, or the
+permission was revoked. The content is hidden. Reload the page to start again.
 
 **`arnft: failed to load NFT marker "…"`.** The descriptor set could not be loaded. The message
 ends with the reason:
@@ -329,7 +335,7 @@ it on the plane instead.
 ```mermaid
 flowchart LR
     CAM["camera"] --> VIDEO["video element (id=video)"]
-    VIDEO --> CVR["cameraViewRenderer<br/>320×240 frames"]
+    VIDEO --> CVR["CameraView<br/>320×240 frames"]
     CVR --> TRK["createNFTTracker<br/>jsartoolkitNFT"]
     subgraph SYS ["arnft system"]
         TRK
@@ -345,32 +351,35 @@ flowchart LR
 ```
 
 1. **Camera.** The `arnft` system opens the camera, preferring the rear camera on phones.
-   `cameraViewRenderer` draws each frame into a 320×240 processing canvas, letterboxing
-   non-4:3 video.
+   `CameraView`, from [`@webarkit/camera-view`](https://github.com/webarkit/camera-view), draws
+   each frame into a 320×240 processing canvas, letterboxing non-4:3 video.
 2. **Tracker.** Once the camera is live and at least one `<a-nft>` exists, the system creates
    a single tracker with `createNFTTracker` and applies its projection to the A-Frame camera.
    There is one tracker per scene, not one per target.
 3. **Targets.** Each `<a-nft>` registers with the system. `markerLoader` loads its descriptor
    set with one call per target, so a bad `url` only affects its own `<a-nft>`.
    `MarkerRegistry` tracks load state and reusable ids.
-4. **Each frame.** `process()` detects and tracks every loaded target. Each pose is routed to
-   its `nft-anchor`, which:
+4. **Each new frame.** `process()` detects and tracks every loaded target. It is skipped when no
+   target is loaded, or when there is no new frame yet. Each pose is routed to its `nft-anchor`,
+   which:
    - smooths the pose (1€ filter);
    - centres the content using the target's real size (DPI → mm);
    - scales and lifts it.
 
    A target untracked for more than `lostTimeout` ms is hidden.
 5. **Alignment.** The video and the WebGL canvas are sized to the same "cover" box, so the
-   projection maps 3D onto exactly the video's pixels.
+   projection maps 3D onto exactly the video's pixels. When the video changes size, for example
+   on a rotated phone, the projection follows. If the processing frame changes size too, the
+   tracker is replaced and the targets load again.
 
 | Module | Responsibility |
 |--------|----------------|
 | [`src/index.js`](src/index.js) | Entry point: importing it registers everything, logs the version banner and exports `version` |
 | [`src/registerNFT.js`](src/registerNFT.js) | A-Frame glue: the `arnft` system, the `nft-anchor` component, the `<a-nft>` primitive |
-| [`src/cameraViewRenderer.js`](src/cameraViewRenderer.js) | Camera stream and processing frames |
+| [`src/cameraConstraints.js`](src/cameraConstraints.js) | Keeps `videoWidth` / `videoHeight` as ideal capture sizes with `CameraView` |
 | [`src/markerRegistry.js`](src/markerRegistry.js) | Target bookkeeping: load state, reusable ids |
 | [`src/markerLoader.js`](src/markerLoader.js) | Loads descriptor sets into the tracker |
-| [`src/frames.js`](src/frames.js) | Routes each `process()` result to the `<a-nft>` components |
+| [`src/frames.js`](src/frames.js) | Picks the next frame to process, and routes each `process()` result to the `<a-nft>` components |
 | [`src/trackerSettings.js`](src/trackerSettings.js) | Turns `arnft` attributes into tracker settings |
 | [`src/nftMath.js`](src/nftMath.js) | Pose geometry: centring, lift, matrix normalisation |
 | [`src/poseFilter.js`](src/poseFilter.js) | 1€ pose smoothing, on top of [`@webarkit/oneeurofilter-ts`](https://github.com/webarkit/OneEuroFilter-ts) |
@@ -423,6 +432,8 @@ See the [open issues](https://github.com/webarkit/Aframe-nft/issues) for the ful
 
 - [jsartoolkitNFT](https://github.com/webarkit/jsartoolkitNFT) (WebARKit): NFT detection and
   tracking.
+- [camera-view](https://github.com/webarkit/camera-view) (WebARKit): camera capture and processing
+  frames.
 - [A-Frame](https://aframe.io/): the WebXR framework this builds on.
 - [AR.js](https://github.com/AR-js-org/AR.js): the video/canvas alignment approach.
 - The [1€ filter](https://gery.casiez.net/1euro/) (Casiez, Roussel and Vogel, CHI 2012), via
