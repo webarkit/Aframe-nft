@@ -9,6 +9,23 @@
 /** @typedef {import('./markerRegistry').MarkerRegistry} MarkerRegistry */
 
 /**
+ * The next frame to process, or `null` when there is none.
+ *
+ * `getImage()` always returns an `ImageData`: between captures, a copy of the last
+ * frame. Its `frame` counter says whether it captured, so a repeated frame is not
+ * processed again (webarkit/Aframe-nft#12). The counter follows the frame-rate gate,
+ * not the camera: a camera slower than `targetFrameRate` can still repeat a picture.
+ *
+ * @param {import('@webarkit/camera-view').CameraView} view
+ * @returns {ImageData|null}
+ */
+export function nextFrame(view) {
+    const before = view.frame;
+    const image = view.getImage();
+    return view.frame === before ? null : image;
+}
+
+/**
  * Route one `process()` result: each tracked target's pose to its record, and each
  * `lost` transition to `onLost()`.
  *

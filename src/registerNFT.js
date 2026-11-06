@@ -23,7 +23,7 @@ import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
 import { PoseFilter } from './poseFilter';
 import { MarkerRegistry } from './markerRegistry';
 import { loadPendingMarkers } from './markerLoader';
-import { routeFrameResult } from './frames';
+import { nextFrame, routeFrameResult } from './frames';
 import { runtimePatch, trackerConfig } from './trackerSettings';
 import { DEFAULT_LOG_LEVEL, LOG_LEVEL_NAMES } from './logLevel';
 
@@ -91,9 +91,16 @@ AFRAME.registerSystem('arnft', {
         this.tracker = null;
         this.videoReady = false;
         this.starting = false;
+        // No tracker will start any more: tracking failed.
+        this.stopped = false;
+        // Bumped when a tracker is stopped, so that a start still in flight knows
+        // it was overtaken.
+        this._generation = 0;
         // Markers registered by <a-nft> components: load state and reusable ids.
         this.registry = new MarkerRegistry();
 
+        this.view.addEventListener('geometrychange', (event) => this._onGeometryChange(event.detail));
+        this.view.addEventListener('ended', () => this._onCameraEnded());
         this.view
             .initialize({ facingMode: 'environment', targetFrameRate: 60 })
             .then(() => {
@@ -194,6 +201,7 @@ AFRAME.registerSystem('arnft', {
      */
     _maybeStart: function () {
         if (
+            this.stopped ||
             this.starting ||
             this.tracker ||
             !this.videoReady ||
@@ -205,14 +213,113 @@ AFRAME.registerSystem('arnft', {
 
         const { frameWidth, frameHeight } = this.view.geometry;
         this._frameSize = { width: frameWidth, height: frameHeight };
+        // Kept from the first start: a partial setAttribute('arnft', 'key: value')
+        // returns cameraParam to its default, which a restart must not pick up.
+        this._cameraParam = this._cameraParam || resolveUrl(this.data.cameraParam);
         const startData = this.data;
-        createNFTTracker(trackerConfig(startData, this._frameSize, resolveUrl(startData.cameraParam)))
-            .then((tracker) => this._onTrackerReady(tracker, startData))
+        const generation = this._generation;
+        createNFTTracker(trackerConfig(startData, this._frameSize, this._cameraParam))
+            .then((tracker) => {
+                if (generation !== this._generation) {
+                    tracker.dispose();
+                    return;
+                }
+                this._onTrackerReady(tracker, startData);
+            })
             .catch((err) => {
+                if (generation !== this._generation) {
+                    return;
+                }
                 // Allow a later _maybeStart() to retry instead of blocking forever.
                 this.starting = false;
                 console.error('arnft: tracker init failed', err);
             });
+    },
+
+    /**
+     * Stop the current tracker, or overtake a start still in flight. Every target
+     * will have to load again on the next one.
+     *
+     * @private
+     */
+    _stopTracker: function () {
+        const tracker = this.tracker;
+        this._generation++;
+        this.tracker = null;
+        this.starting = false;
+        this.registry.resetLoadState();
+        if (tracker) {
+            tracker.dispose();
+        }
+    },
+
+    /**
+     * Replace the tracker, whose frame size is fixed when it is created.
+     *
+     * @private
+     */
+    _restartTracker: function () {
+        this._hideAll();
+        this._stopTracker();
+        this._maybeStart();
+    },
+
+    /**
+     * Hide the content of every target. The components hide their own mesh.
+     *
+     * @private
+     */
+    _hideAll: function () {
+        for (const marker of this.registry.markers) {
+            marker.component.onLost();
+        }
+    },
+
+    /**
+     * The video changed size, for example because a phone was rotated. With the same
+     * frame size only the projection changes. A new frame size needs a new tracker,
+     * because `camera_para` is scaled to it when the tracker is created.
+     *
+     * @param {import('@webarkit/camera-view').FrameGeometry} geometry
+     * @private
+     */
+    _onGeometryChange: function (geometry) {
+        // With no tracker and no start in flight, the next start reads the geometry.
+        if (!this.tracker && !this.starting) {
+            return;
+        }
+        const { width, height } = this._frameSize;
+        if (geometry.frameWidth !== width || geometry.frameHeight !== height) {
+            this._restartTracker();
+        } else if (this.tracker) {
+            this._setupCamera();
+        }
+    },
+
+    /**
+     * The camera stream ended: unplugged, or the permission was revoked. There are
+     * no more frames, so hide the content instead of leaving it frozen.
+     *
+     * @private
+     */
+    _onCameraEnded: function () {
+        this.videoReady = false;
+        this._hideAll();
+        console.warn('arnft: the camera stream ended; tracking has stopped');
+    },
+
+    /**
+     * The tracker failed while running. This stops tracking for good, instead of
+     * repeating the same error on every frame of the render loop.
+     *
+     * @param {*} err
+     * @private
+     */
+    _onTrackerFailure: function (err) {
+        console.error('arnft: the tracker failed; tracking has stopped', err);
+        this.stopped = true;
+        this._hideAll();
+        this._stopTracker();
     },
 
     /**
@@ -364,8 +471,9 @@ AFRAME.registerSystem('arnft', {
 
     /**
      * Per frame: keep the layout and projection in sync, run one detection and
-     * tracking pass on the processing frame, and hand the poses and `lost`
-     * transitions to the components.
+     * tracking pass on a new frame, and hand the poses and `lost` transitions to the
+     * components. With no target to track, or no new frame, there is nothing to do:
+     * a detection pass is the expensive step (webarkit/Aframe-nft#12).
      */
     tick: function () {
         if (!this.tracker || !this.videoReady) {
@@ -373,7 +481,21 @@ AFRAME.registerSystem('arnft', {
         }
         this._resize();
         this._applyProjection();
-        routeFrameResult(this.registry, this.tracker.process(this.view.getImage(), performance.now()));
+        if (!this.registry.hasLoaded()) {
+            return;
+        }
+        let result;
+        try {
+            const frame = nextFrame(this.view);
+            if (!frame) {
+                return;
+            }
+            result = this.tracker.process(frame, performance.now());
+        } catch (err) {
+            this._onTrackerFailure(err);
+            return;
+        }
+        routeFrameResult(this.registry, result);
     },
 });
 
