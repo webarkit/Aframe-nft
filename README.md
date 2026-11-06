@@ -89,8 +89,8 @@ A page needs four things:
    `video`.
 3. **An `<a-scene embedded arnft>`.** `embedded` lets the canvas be sized to match the video;
    `arnft` configures the tracker.
-4. **An `<a-camera>` at the origin with `look-controls` disabled.** Poses are relative to the
-   camera, so the camera itself must not move.
+4. **A camera entity at the origin:** `<a-entity camera position="0 0 0">`. Poses are relative to
+   the camera, so the camera itself must not move.
 
 ```html
 <!DOCTYPE html>
@@ -118,7 +118,7 @@ A page needs four things:
           <a-box color="#4CC3D9"></a-box>
         </a-nft>
 
-        <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+        <a-entity camera position="0 0 0"></a-entity>
       </a-scene>
     </div>
   </body>
@@ -291,6 +291,13 @@ build and the jsartoolkitNFT version inside it.
 
 **`arnft: the camera stream ended; tracking has stopped`.** The camera was unplugged, or the
 permission was revoked. The content is hidden. Reload the page to start again.
+
+**On a phone the scene never starts, with `Cannot read properties of undefined (reading
+'permissionGranted')` in the console.** This comes from `look-controls` in A-Frame 1.8.0, which
+`<a-camera>` includes. It happens when A-Frame loads after the scene has been parsed, as with a
+`type="module"` script, in a browser that has `DeviceOrientationEvent.requestPermission`, such as
+Chrome 156 on Android. Use `<a-entity camera>`, or load the bundle with a plain `<script>` in
+`<head>`.
 
 **`arnft: failed to load NFT marker "…"`.** The descriptor set could not be loaded. The message
 ends with the reason:

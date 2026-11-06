@@ -48,8 +48,8 @@ function resolveUrl(path) {
  * Page requirements:
  * - a `<video id="video">` element, which receives the camera feed;
  * - an `embedded` scene, so the canvas can be sized to match the video;
- * - an `<a-camera>` (or `[camera]` entity) at the origin with `look-controls`
- *   disabled. The tracker's projection is applied to it.
+ * - a `[camera]` entity (or an `<a-camera>` with `look-controls` disabled) at the
+ *   origin. The tracker's projection is applied to it.
  */
 AFRAME.registerSystem('arnft', {
     schema: {
