@@ -23,7 +23,7 @@ import { PoseFilter } from './poseFilter';
 import { MarkerRegistry } from './markerRegistry';
 import { loadPendingMarkers } from './markerLoader';
 import { routeFrameResult } from './frames';
-import { trackerConfig } from './trackerSettings';
+import { runtimePatch, trackerConfig } from './trackerSettings';
 import { DEFAULT_LOG_LEVEL, LOG_LEVEL_NAMES } from './logLevel';
 
 /**
@@ -100,6 +100,38 @@ AFRAME.registerSystem('arnft', {
                 this._maybeStart();
             })
             .catch((err) => console.error('arnft: camera init failed', err));
+    },
+
+    /**
+     * Apply the settings that can change while tracking runs. A-Frame also calls
+     * this from the system's constructor, before any tracker exists: the initial
+     * values then reach the tracker through `trackerConfig()`.
+     *
+     * `setAttribute('arnft', key, value)` does not work on a system: A-Frame drops
+     * the value and turns `this.data` into the bare key, so the previous settings
+     * are restored here. A-Frame rebuilds the data from what is passed, so with a
+     * partial `'key: value'` string the other settings go back to their defaults.
+     *
+     * @param {object} oldData Previous property values.
+     */
+    update: function (oldData) {
+        if (typeof this.data !== 'object') {
+            console.warn(
+                `arnft: setAttribute('arnft', key, value) is not supported; ` +
+                    `use setAttribute('arnft', 'key: value') instead`,
+            );
+            this.data = oldData;
+            return;
+        }
+        if (!this.tracker) {
+            return;
+        }
+        const patch = runtimePatch(oldData, this.data);
+        if (patch) {
+            this.tracker
+                .configure(patch)
+                .catch((err) => console.error('arnft: could not apply the new settings', err));
+        }
     },
 
     /**

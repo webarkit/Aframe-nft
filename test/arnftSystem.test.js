@@ -144,6 +144,55 @@ describe('arnft per-frame work', () => {
     });
 });
 
+describe('arnft runtime settings (#13)', () => {
+    it('does nothing before the tracker exists: the constructor calls update({})', () => {
+        expect(() => system({ tracker: null }).update({})).not.toThrow();
+    });
+
+    it('sends only what changed to configure()', () => {
+        const tracker = { configure: vi.fn(() => Promise.resolve()) };
+        const s = system({ tracker, data: { ...base, detectionInterval: 0 } });
+        s.update({ ...base });
+        expect(tracker.configure).toHaveBeenCalledWith({ detectionInterval: 0 });
+    });
+
+    it('does not call configure() when no runtime key changed', () => {
+        const tracker = { configure: vi.fn() };
+        system({ tracker, data: { ...base } }).update({ ...base });
+        expect(tracker.configure).not.toHaveBeenCalled();
+    });
+
+    it("keeps its settings and warns on setAttribute('arnft', key, value)", () => {
+        // A-Frame drops the third argument for systems and turns this.data into
+        // the bare string, which would break any later use of the settings.
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const tracker = { configure: vi.fn() };
+        const s = system({ tracker, data: 'detectionInterval' });
+        s.update(base);
+        expect(s.data).toBe(base);
+        expect(tracker.configure).not.toHaveBeenCalled();
+        expect(warn.mock.calls[0][0]).toContain('arnft:');
+        warn.mockRestore();
+    });
+
+    it('also keeps its settings when that happens before the tracker exists', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const s = system({ tracker: null, data: 'detectionInterval' });
+        s.update(base);
+        expect(s.data).toBe(base);
+        warn.mockRestore();
+    });
+
+    it('logs a rejected patch instead of throwing (bad value)', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const tracker = { configure: vi.fn(() => Promise.reject(new TypeError('detectionInterval'))) };
+        system({ tracker, data: { ...base, detectionInterval: NaN } }).update({ ...base });
+        await flush();
+        expect(error.mock.calls[0][0]).toContain('arnft:');
+        error.mockRestore();
+    });
+});
+
 describe('arnft registerMarker', () => {
     it('hands a re-added <a-nft> the size kept from its first load', () => {
         const s = system({ tracker: {}, _loadPendingMarkers: vi.fn() });

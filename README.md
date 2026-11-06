@@ -219,10 +219,24 @@ exact target in [webarkit/jsfeatNext#142](https://github.com/webarkit/jsfeatNext
 | `detectionInterval` | number | `300` | Minimum time (ms) between searches for untracked targets while others are tracked; `0` searches every frame |
 | `logLevel` | string | `warn` | Tracker console verbosity: `debug`, `info`, `warn` or `error`. `info` adds ARToolKit's per-frame tracking lines (`[info] Tracked page 0` …), useful when debugging detection |
 
-`continuousDetection`, `detectionInterval` and `logLevel` are read once, when tracking starts
-([#13](https://github.com/webarkit/Aframe-nft/issues/13)). `logLevel` does not reach
-jsartoolkitNFT's start-up lines or its `webarkit-info` lines
-([webarkit/jsartoolkitNFT#677](https://github.com/webarkit/jsartoolkitNFT/issues/677)).
+`continuousDetection`, `detectionInterval`, `lostTimeout` and `logLevel` can change while tracking
+runs:
+
+```js
+document.querySelector('a-scene').setAttribute('arnft', 'detectionInterval: 0');
+```
+
+- **Repeat the settings you have changed.** A-Frame rebuilds a system's settings from what you
+  pass, so any key you leave out goes back to its default.
+- **Use the string form.** The three-argument form,
+  `setAttribute('arnft', 'detectionInterval', 0)`, does not work on a system: it is ignored, with a
+  warning in the console.
+- **A value the tracker refuses changes nothing.** The tracker applies a change in one step, and
+  `arnft: could not apply the new settings` in the console names the bad value.
+
+`logLevel` also governs jsartoolkitNFT's start-up lines. Only the camera parameter table still
+prints at every level
+([webarkit/WebARKitLib#113](https://github.com/webarkit/WebARKitLib/issues/113)).
 
 ### `<a-nft>` primitive — the `nft-anchor` component
 
