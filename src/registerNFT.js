@@ -75,7 +75,7 @@ AFRAME.registerSystem('arnft', {
         // level (webarkit/WebARKitLib#113).
         logLevel: { type: 'string', default: DEFAULT_LOG_LEVEL, oneOf: LOG_LEVEL_NAMES },
         // Track in a Web Worker, falling back to the same thread if it cannot start.
-        // Read when the tracker is created.
+        // This and workerBase are read once, when the first tracker is created.
         worker: { type: 'boolean', default: false },
         // Folder of the Worker files, resolved against the page. Empty: next to the
         // bundle, which needs the bundle to load through a plain <script>.
@@ -282,12 +282,14 @@ AFRAME.registerSystem('arnft', {
         };
         const startData = this.data;
         const generation = this._generation;
-        createTracker(trackerConfig(startData, this._frameSize, cameraParam), workerOptions, {
-            createNFTTracker,
-            createNFTTrackerWorker,
-        })
+        const isStale = () => generation !== this._generation;
+        createTracker(
+            trackerConfig(startData, this._frameSize, cameraParam),
+            { ...workerOptions, isStale },
+            { createNFTTracker, createNFTTrackerWorker },
+        )
             .then((tracker) => {
-                if (generation !== this._generation) {
+                if (isStale()) {
                     this._disposeTracker(tracker);
                     return;
                 }
@@ -298,7 +300,7 @@ AFRAME.registerSystem('arnft', {
                 this._onTrackerReady(tracker, startData);
             })
             .catch((err) => {
-                if (generation !== this._generation) {
+                if (isStale()) {
                     return;
                 }
                 // Allow a later _maybeStart() to retry instead of blocking forever.
@@ -453,6 +455,7 @@ AFRAME.registerSystem('arnft', {
                         'it will not be tracked',
                     reason,
                 ),
+            onTrackerFailed: (err) => this._onTrackerFailure(err),
         });
     },
 

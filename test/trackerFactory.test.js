@@ -56,6 +56,28 @@ describe('createTracker', () => {
         warn.mockRestore();
     });
 
+    it('falls back in a browser without AbortSignal.timeout', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        timeout.mockImplementation(() => {
+            throw new TypeError('AbortSignal.timeout is not a function');
+        });
+        const f = factories();
+        expect(await createTracker(config, { worker: true, workerBase: '' }, f)).toBe('same');
+        expect(warn).toHaveBeenCalledTimes(1);
+        warn.mockRestore();
+    });
+
+    it('does not fall back for a start that was overtaken: nobody wants that tracker', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const f = factories();
+        const failure = new Error('the worker failed to start');
+        f.createNFTTrackerWorker.mockRejectedValue(failure);
+        await expect(createTracker(config, { worker: true, workerBase: '', isStale: () => true }, f)).rejects.toBe(failure);
+        expect(f.createNFTTracker).not.toHaveBeenCalled();
+        expect(warn).not.toHaveBeenCalled();
+        warn.mockRestore();
+    });
+
     it('rejects when the same thread cannot start either', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const f = factories();

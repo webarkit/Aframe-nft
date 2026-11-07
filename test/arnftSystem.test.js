@@ -197,6 +197,24 @@ describe('arnft tracker start-up', () => {
             expect(createNFTTrackerWorker.mock.lastCall[1].workerBase).toBe(new URL('../dist/', document.baseURI).href);
         });
 
+        it('says nothing and compiles nothing when a Worker start fails after the scene was removed', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+            const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+            let failStart;
+            createNFTTrackerWorker.mockImplementationOnce(() => new Promise((_, reject) => (failStart = reject)));
+            const s = workerSystem({ worker: true, workerBase: '' }, { view: { geometry, destroy() {} } });
+            s._maybeStart();
+            s._teardown();
+            failStart(new Error('the worker failed to start'));
+            await flush();
+
+            expect(createNFTTracker).not.toHaveBeenCalled();
+            expect(warn).not.toHaveBeenCalled();
+            expect(error).not.toHaveBeenCalled();
+            warn.mockRestore();
+            error.mockRestore();
+        });
+
         it('a restart keeps the Worker, which a partial setAttribute turns off', async () => {
             createNFTTrackerWorker.mockResolvedValueOnce({ dispose() {}, addNFTTargets: pending });
             createNFTTrackerWorker.mockImplementationOnce(pending);
@@ -399,6 +417,31 @@ describe('arnft per-frame work', () => {
             expect(s.tracker).toBeNull();
             expect(s.stopped).toBe(true);
             expect(view.getImage).toHaveBeenCalledTimes(1);
+            error.mockRestore();
+        });
+
+        it('logs once, hides the content and stops when the Worker dies while targets load', async () => {
+            const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+            const onLost = vi.fn();
+            const rejects = [];
+            const tracker = {
+                dispose: vi.fn(() => Promise.resolve()),
+                addNFTTargets: vi.fn(() => new Promise((_, reject) => rejects.push(reject))),
+            };
+            const s = system({ tracker, videoReady: true });
+            s.registry.add({ name: 'a', url: 'a', component: { onLost } });
+            s.registry.add({ name: 'b', url: 'b', component: { onLost } });
+            s._loadPendingMarkers();
+
+            const died = new Error('NFTTracker worker: crashed');
+            rejects.forEach((reject) => reject(died));
+            await flush();
+
+            expect(error).toHaveBeenCalledTimes(1);
+            expect(error.mock.calls[0][0]).toContain('the tracker failed');
+            expect(onLost).toHaveBeenCalledTimes(2);
+            expect(s.tracker).toBeNull();
+            expect(s.stopped).toBe(true);
             error.mockRestore();
         });
 

@@ -197,8 +197,9 @@ never answers takes 30 s.
   on its own, with no attribute for it.
 - **Costs.** A pose arrives about one frame later than on the same thread, and the page downloads the
   tracker's WASM twice: inside `AframeNft.js`, and in the Worker file.
-- **If a running Worker fails**, the console shows one `arnft: the tracker failed` error, the content
-  is hidden and tracking stops until the page is reloaded.
+- **If a running Worker fails**, also while a target loads, the console shows one
+  `arnft: the tracker failed` error, the content is hidden and tracking stops until the page is
+  reloaded.
 
 ## Image targets 🎯
 
@@ -252,9 +253,9 @@ exact target in [webarkit/jsfeatNext#142](https://github.com/webarkit/jsfeatNext
 | `detectionInterval` | number | `300` | Minimum time (ms) between searches for untracked targets while others are tracked; `0` searches every frame |
 | `logLevel` | string | `warn` | Tracker console verbosity: `debug`, `info`, `warn` or `error`. `info` adds ARToolKit's per-frame tracking lines (`[info] Tracked page 0` …), useful when debugging detection |
 | `worker` | boolean | `false` | Track in a Web Worker, falling back to the page's thread if it cannot start. See [Tracking in a Web Worker](#tracking-in-a-web-worker) |
-| `workerBase` | string | empty | Folder of the Worker files, relative to the page. Empty means next to the bundle |
+| `workerBase` | string | empty | Folder of the Worker files, relative to the page and ending in `/`. Empty means next to the bundle |
 
-`worker` and `workerBase` are read when the tracker is created. `continuousDetection`, `detectionInterval`, `lostTimeout` and `logLevel` can change while tracking
+`worker` and `workerBase` are read once, when the first tracker is created. `continuousDetection`, `detectionInterval`, `lostTimeout` and `logLevel` can change while tracking
 runs:
 
 ```js

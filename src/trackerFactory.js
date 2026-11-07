@@ -25,22 +25,29 @@ export const WORKER_START_TIMEOUT_MS = 30000;
  * @param {string} options.workerBase Folder of the Worker files. Empty: next to the
  *     bundle. It is left out in that case, because the package would read an empty
  *     string as the page's own folder.
+ * @param {function(): boolean} [options.isStale] Whether this tracker is still wanted.
+ *     If not, a Worker that failed to start is not replaced: the same-thread build
+ *     would compile on the page, for a tracker that is disposed straight away.
  * @param {object} factories
  * @param {function(object): Promise<object>} factories.createNFTTracker
  * @param {function(object, object): Promise<object>} factories.createNFTTrackerWorker
  * @returns {Promise<import('@webarkit/jsartoolkit-nft').NFTTracker>}
  */
-export async function createTracker(config, { worker, workerBase }, { createNFTTracker, createNFTTrackerWorker }) {
+export async function createTracker(config, { worker, workerBase, isStale }, { createNFTTracker, createNFTTrackerWorker }) {
     if (!worker) {
         return createNFTTracker(config);
     }
-    const options = { signal: AbortSignal.timeout(WORKER_START_TIMEOUT_MS) };
-    if (workerBase) {
-        options.workerBase = workerBase;
-    }
     try {
+        // Inside the try: a browser without AbortSignal.timeout still has the same thread.
+        const options = { signal: AbortSignal.timeout(WORKER_START_TIMEOUT_MS) };
+        if (workerBase) {
+            options.workerBase = workerBase;
+        }
         return await createNFTTrackerWorker(config, options);
     } catch (err) {
+        if (isStale?.()) {
+            throw err;
+        }
         console.warn('arnft: could not start the tracking Worker; tracking on the same thread instead', err);
         return createNFTTracker(config);
     }

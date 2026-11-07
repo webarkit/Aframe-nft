@@ -234,11 +234,13 @@ Decisions made during Phase 2 (see also Decision Log):
   copied next to it at build time. **The default stays off whatever the numbers say: changing it is a
   separate decision.** If the Worker cannot start within 30 s, the page tracks on the same thread with
   a warning; missing files reject at once. A Worker that fails while running hides the content once
-  and stops, with no restart on the same thread, to keep one recovery path. There is no watchdog for a
-  Worker that hangs with no error: nothing suggests it happens. A restart waits for the old Worker to
-  go, at most 2 s by the package's `dispose()`. A start overtaken by a restart is not waited for: it is
-  disposed when it resolves, so on a frame-size change during start-up two Workers can overlap for the
-  length of that start. Under `npm run dev`, Vite transforms the Worker files (inline source maps take
+  and stops, with no restart on the same thread, to keep one recovery path. That includes a rejected
+  `addNFTTargets`, which reports a failed load in its result and so only rejects when the tracker
+  itself failed. There is no watchdog for a Worker that hangs with no error: nothing suggests it
+  happens. A restart waits for the old Worker to go, at most 2 s by the package's `dispose()`. A start
+  overtaken by a restart is not waited for: it is disposed when it resolves, and does not fall back if
+  it fails, so on a frame-size change during start-up two Workers can overlap for the length of that
+  start. Under `npm run dev`, Vite transforms the Worker files (inline source maps take
   them from 716 KB to 2 MB), and they still run, so the dev server needs nothing special.
 
   Measured on a desktop only, not a phone: 8 threads, headless Chromium with software GL, a fake camera,
