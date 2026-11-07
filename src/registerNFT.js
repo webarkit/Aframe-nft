@@ -576,9 +576,11 @@ AFRAME.registerComponent('arnft-lifecycle', {
  * 1. optional 1€ smoothing;
  * 2. the post-matrix: centring on the target (real size, DPI → mm), then the
  *    lift onto the plane, then `scaleFactor`;
- * 3. the result is written to the entity's matrix in `tick()`.
+ * 3. the result is written to the entity's matrix.
  *
- * The content is hidden when the target is lost or the component is removed.
+ * The content stays hidden until the first pose, and is hidden again when the
+ * target is lost or the component is removed. While the entity is paused, poses
+ * are ignored and the content stays where it is.
  */
 AFRAME.registerComponent('nft-anchor', {
     dependencies: ['arnft'],
@@ -609,8 +611,9 @@ AFRAME.registerComponent('nft-anchor', {
     /** Set up pose state and register the target with the `arnft` system. */
     init: function () {
         this.mesh = this.el.object3D;
+        // Without a pose the content has no place to be: onPose() shows it.
+        this.mesh.visible = false;
         this.postMatrix = new AFRAME.THREE.Matrix4();
-        this.latestMatrix = null;
         this.markerData = null;
         // Built by the first update(), which A-Frame runs right after init().
         this.filter = null;
@@ -620,6 +623,16 @@ AFRAME.registerComponent('nft-anchor', {
             url: this.data.markerUrl,
             component: this,
         });
+    },
+
+    /**
+     * `onPose()` ignores poses while the entity is paused, so smoothing starts again
+     * afterwards rather than easing in from the pose it stopped at.
+     */
+    pause: function () {
+        if (this.filter) {
+            this.filter.reset();
+        }
     },
 
     /**
@@ -635,7 +648,6 @@ AFRAME.registerComponent('nft-anchor', {
         this.el.sceneEl.systems.arnft.unregisterMarker(this.marker);
         this.marker = null;
         this.onLost();
-        this.latestMatrix = null;
     },
 
     /**
@@ -755,12 +767,25 @@ AFRAME.registerComponent('nft-anchor', {
     /**
      * A new pose for this target. Called by the `arnft` system on every frame
      * in which the target is tracked. The right-handed pose is smoothed,
-     * combined with the post-matrix, and cached for `tick()`.
+     * combined with the post-matrix, and written to the entity's matrix, so the
+     * entity's `position` / `rotation` / `scale` attributes are ignored once
+     * tracking starts.
+     *
+     * The matrix is written here because A-Frame renders right after the systems'
+     * `tick`, which is where this runs: the frame that shows the content must
+     * already have its pose. The component's own `tick` has run by then.
      *
      * @param {ArrayLike<number>} matrixGL_RH 4×4 pose matrix from jsartoolkitNFT.
      * @param {number} time Time (ms) of the frame this pose comes from.
      */
     onPose: function (matrixGL_RH, time) {
+        // A paused entity keeps its content where it is, but its poses still arrive,
+        // because they come from the `arnft` system. This reads `el.isPlaying` rather
+        // than a flag set by pause() and play(): A-Frame calls pause() when an entity
+        // is removed, and no play() when the same entity is appended again.
+        if (!this.el.isPlaying) {
+            return;
+        }
         let elements = toMatrixElements(matrixGL_RH);
         if (elements === null) {
             console.error('nft-anchor: invalid matrixGL_RH', matrixGL_RH);
@@ -772,7 +797,8 @@ AFRAME.registerComponent('nft-anchor', {
         const m = new AFRAME.THREE.Matrix4();
         m.elements = elements;
         m.multiply(this.postMatrix);
-        this.latestMatrix = m;
+        this.mesh.matrixAutoUpdate = false;
+        this.mesh.matrix.copy(m);
         this.mesh.visible = true;
     },
 
@@ -786,19 +812,6 @@ AFRAME.registerComponent('nft-anchor', {
         if (this.filter) {
             this.filter.reset();
         }
-    },
-
-    /**
-     * Apply the latest pose. The matrix is set directly, so the entity's
-     * `position` / `rotation` / `scale` attributes are ignored once tracking
-     * starts.
-     */
-    tick: function () {
-        if (this.latestMatrix === null) {
-            return;
-        }
-        this.mesh.matrixAutoUpdate = false;
-        this.mesh.matrix.copy(this.latestMatrix);
     },
 });
 
