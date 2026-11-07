@@ -34,10 +34,16 @@ export function nextFrame(view) {
  * `<a-nft>` can adopt a target that is already tracked, which fires no new `found`,
  * so a pose is what makes content visible.
  *
+ * `{ skipped: true }` is the Worker's answer to a `process()` made while another was
+ * in flight: it says nothing about any target.
+ *
  * @param {MarkerRegistry} registry
- * @param {import('@webarkit/jsartoolkit-nft').FrameResult} result
+ * @param {import('@webarkit/jsartoolkit-nft').FrameResult|{skipped: true}} result
  */
 export function routeFrameResult(registry, result) {
+    if (result.skipped) {
+        return;
+    }
     for (const target of result.targets) {
         if (target.pose) {
             registry.get(target.id)?.component.onPose(target.pose, result.time);
