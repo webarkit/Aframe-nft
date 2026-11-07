@@ -168,7 +168,8 @@ Decisions made during Phase 2 (see also Decision Log):
   points at the physical target, not the camera model. Principal-point "correction" knobs were
   prototyped and removed — they only masked the mismatch.
 - ✅ **Pose smoothing (`OneEuroFilter`) — done.** Optional 1€ filter on the pose matrix,
-  exposed via `smooth` / `smoothMinCutoff` / `smoothBeta` on `nft-anchor` (on by default).
+  exposed via `smooth` / `smoothMinCutoff` / `smoothBeta` / `smoothRotationBeta` on `nft-anchor`
+  (on by default).
   First implemented in-house; now `src/poseFilter.js` wraps WebARKit's
   `@webarkit/oneeurofilter-ts`, converting the Hz cutoffs to the package's per-millisecond
   units. It filters the rotation on its tangent space (`src/so3.js`) and the translation as a
@@ -176,6 +177,16 @@ Decisions made during Phase 2 (see also Decision Log):
   ([jsartoolkitNFT#766](https://github.com/webarkit/jsartoolkitNFT/issues/766)). Filtering the 16
   values one by one, as earlier versions did, gave the rotation scale and shear.
   `test/poseFilter.test.js` pins the translation to the earlier output.
+
+  Rotation and translation share `smoothMinCutoff`, a frequency, but each has its own beta, because
+  beta is per unit of the signal. One value drove both at first, and the 0.01 that suits millimetres
+  barely opens the cutoff for radians: rotation ran 2.6 s behind on a hand-held motion, against
+  0.3 s for translation. `smoothRotationBeta` defaults to 2, which brings rotation to the same delay
+  and leaves translation exactly as it was. A shared 1 Hz / 0.01 was the alternative: it needs no new
+  attribute and has lower error on the move, because it speeds up translation too, but its fixed
+  low-pass also applies at rest, with 2.4 times the shake at 30 fps and 3.8 times at 15 fps. Measured
+  on real tracker poses with a synthetic camera. This is where `src/poseFilter.js` differs from
+  jsartoolkitNFT's `oneEuro.ts`, in which one pair still drives both.
 - ✅ **Multi-marker — `<a-nft>` per target, visibility derived locally.** Several `<a-nft>`
   elements each anchor their own target. Three upstream constraints originally shaped this;
   **jsartoolkitNFT 1.13.0 lifts all three**:

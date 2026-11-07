@@ -602,10 +602,14 @@ AFRAME.registerComponent('nft-anchor', {
         offsetX: { type: 'number', default: 0 },
         offsetY: { type: 'number', default: 0 },
         // Pose smoothing (1€ filter) to reduce tracking jitter. Lower minCutoff =
-        // smoother but more lag; higher beta = less lag while moving.
+        // smoother but more lag; higher beta = less lag while moving. The cutoff is
+        // shared. The betas are not, because they are per unit of the signal:
+        // smoothBeta is for the translation (mm), smoothRotationBeta for the rotation
+        // (radians).
         smooth: { type: 'boolean', default: true },
         smoothMinCutoff: { type: 'number', default: 0.0001 },
         smoothBeta: { type: 'number', default: 0.01 },
+        smoothRotationBeta: { type: 'number', default: 2 },
     },
 
     /** Set up pose state and register the target with the `arnft` system. */
@@ -664,7 +668,8 @@ AFRAME.registerComponent('nft-anchor', {
         if (
             this.data.smooth !== oldData.smooth ||
             this.data.smoothMinCutoff !== oldData.smoothMinCutoff ||
-            this.data.smoothBeta !== oldData.smoothBeta
+            this.data.smoothBeta !== oldData.smoothBeta ||
+            this.data.smoothRotationBeta !== oldData.smoothRotationBeta
         ) {
             this._buildFilter();
         }
@@ -684,6 +689,7 @@ AFRAME.registerComponent('nft-anchor', {
             ? new PoseFilter({
                   minCutoff: this.data.smoothMinCutoff,
                   beta: this.data.smoothBeta,
+                  rotationBeta: this.data.smoothRotationBeta,
               })
             : null;
     },

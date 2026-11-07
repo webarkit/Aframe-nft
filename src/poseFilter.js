@@ -17,9 +17,12 @@
  * - **Translation**, as a vector, with the package's `filter()`. The result is the
  *   same as filtering those three elements on their own, as before.
  *
- * One `minCutoff` / `beta` pair drives both. For small rotations the change of R's
- * entries is about the angle in radians, the scale of ω, so existing settings keep
- * their meaning.
+ * **Settings.** `minCutoff` is a frequency, so one value suits both parts. `beta` is
+ * per unit of the signal, so each part has its own: the same number barely opens the
+ * cutoff for radians while it suits millimetres. A point on the content moves about
+ * `angle × lever`, with a lever of 100 to 300 mm, so the rotation needs 100 to 300
+ * times the translation's `beta`. At the defaults both lag by about the same time.
+ * This is where the wrapper differs from `oneEuro.ts`, where one pair drives both.
  *
  * **Units.** The package measures time in the timestamps' own unit, here
  * milliseconds, so its frequencies are per millisecond. The `nft-anchor` cutoffs
@@ -34,15 +37,17 @@ import { expSO3, logSO3, polarStep } from './so3';
 export class PoseFilter {
     /**
      * @param {object} [options]
-     * @param {number} [options.minCutoff=0.0001] Baseline cutoff in Hz. Lower
-     *     is smoother at rest, with more lag.
-     * @param {number} [options.beta=0.01] Speed coefficient. Higher reduces lag
-     *     while moving.
+     * @param {number} [options.minCutoff=0.0001] Baseline cutoff in Hz, for the
+     *     rotation and the translation. Lower is smoother at rest, with more lag.
+     * @param {number} [options.beta=0.01] The translation's speed coefficient, per
+     *     millimetre. Higher reduces lag while moving.
+     * @param {number} [options.rotationBeta=2] The rotation's speed coefficient, per
+     *     radian. Higher reduces lag while moving.
      */
-    constructor({ minCutoff = 0.0001, beta = 0.01 } = {}) {
+    constructor({ minCutoff = 0.0001, beta = 0.01, rotationBeta = 2 } = {}) {
         // One package instance per method: filter() and filterStep() share the
         // filtered speed.
-        this._rotation = new OneEuroFilter(minCutoff / 1000, beta);
+        this._rotation = new OneEuroFilter(minCutoff / 1000, rotationBeta);
         this._translation = new OneEuroFilter(minCutoff / 1000, beta);
         // Scratch arrays, created once.
         this._r = new Float64Array(9);

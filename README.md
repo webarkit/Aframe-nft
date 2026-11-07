@@ -260,8 +260,9 @@ The remaining properties are set through the component, for example
 | `offsetX` | number | `0` | Extra X offset in target millimetres (rarely needed) |
 | `offsetY` | number | `0` | Extra Y offset in target millimetres (rarely needed) |
 | `smooth` | boolean | `true` | 1€ pose smoothing (reduces jitter) |
-| `smoothMinCutoff` | number | `0.0001` | Smoothing at rest: lower is smoother but lags more |
-| `smoothBeta` | number | `0.01` | Speed response: higher lags less while moving |
+| `smoothMinCutoff` | number | `0.0001` | Smoothing at rest, for rotation and translation: lower is smoother but lags more |
+| `smoothBeta` | number | `0.01` | Translation's speed response, per millimetre: higher lags less while moving, and shakes more |
+| `smoothRotationBeta` | number | `2` | Rotation's speed response, per radian: higher lags less while moving, and shakes more |
 
 The content is centred on the target automatically, using the target's real-world size.
 
