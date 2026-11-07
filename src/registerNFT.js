@@ -16,7 +16,7 @@
  * @module registerNFT
  */
 import 'aframe';
-import { createNFTTracker } from '@webarkit/jsartoolkit-nft';
+import { createNFTTracker, createNFTTrackerWorker } from '@webarkit/jsartoolkit-nft';
 import { CameraView } from '@webarkit/camera-view';
 import { withIdealSize } from './cameraConstraints';
 import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
@@ -25,6 +25,7 @@ import { MarkerRegistry } from './markerRegistry';
 import { loadPendingMarkers } from './markerLoader';
 import { nextFrame, routeFrameResult } from './frames';
 import { runtimePatch, trackerConfig } from './trackerSettings';
+import { createTracker } from './trackerFactory';
 import { DEFAULT_LOG_LEVEL, LOG_LEVEL_NAMES } from './logLevel';
 
 /**
@@ -73,6 +74,12 @@ AFRAME.registerSystem('arnft', {
         // error. WebARKitLib's camera parameter table still prints at every
         // level (webarkit/WebARKitLib#113).
         logLevel: { type: 'string', default: DEFAULT_LOG_LEVEL, oneOf: LOG_LEVEL_NAMES },
+        // Track in a Web Worker, falling back to the same thread if it cannot start.
+        // This and workerBase are read once, when the first tracker is created.
+        worker: { type: 'boolean', default: false },
+        // Folder of the Worker files, resolved against the page. Empty: next to the
+        // bundle, which needs the bundle to load through a plain <script>.
+        workerBase: { type: 'string', default: '' },
     },
 
     /**
@@ -96,6 +103,10 @@ AFRAME.registerSystem('arnft', {
         // Bumped when a tracker is stopped, so that a start still in flight knows
         // it was overtaken.
         this._generation = 0;
+        // The Worker holds a frame and has not answered yet.
+        this._inFlight = false;
+        // A restart is waiting for the old tracker to go. Nothing starts until then.
+        this._releasing = false;
         // Markers registered by <a-nft> components: load state and reusable ids.
         this.registry = new MarkerRegistry();
 
@@ -254,6 +265,7 @@ AFRAME.registerSystem('arnft', {
             this.stopped ||
             this.starting ||
             this.tracker ||
+            this._releasing ||
             !this.videoReady ||
             this.registry.markers.length === 0
         ) {
@@ -264,21 +276,31 @@ AFRAME.registerSystem('arnft', {
         const { frameWidth, frameHeight } = this.view.geometry;
         this._frameSize = { width: frameWidth, height: frameHeight };
         const cameraParam = this._cameraParam || resolveUrl(this.data.cameraParam);
+        const workerOptions = this._workerOptions || {
+            worker: this.data.worker,
+            workerBase: this.data.workerBase && resolveUrl(this.data.workerBase),
+        };
         const startData = this.data;
         const generation = this._generation;
-        createNFTTracker(trackerConfig(startData, this._frameSize, cameraParam))
+        const isStale = () => generation !== this._generation;
+        createTracker(
+            trackerConfig(startData, this._frameSize, cameraParam),
+            { ...workerOptions, isStale },
+            { createNFTTracker, createNFTTrackerWorker },
+        )
             .then((tracker) => {
-                if (generation !== this._generation) {
-                    tracker.dispose();
+                if (isStale()) {
+                    this._disposeTracker(tracker);
                     return;
                 }
-                // Kept once it has worked: a partial setAttribute('arnft', 'key: value')
-                // returns cameraParam to its default, which a restart must not pick up.
+                // Kept once they have worked: a partial setAttribute('arnft', 'key: value')
+                // returns these to their defaults, which a restart must not pick up.
                 this._cameraParam = cameraParam;
+                this._workerOptions = workerOptions;
                 this._onTrackerReady(tracker, startData);
             })
             .catch((err) => {
-                if (generation !== this._generation) {
+                if (isStale()) {
                     return;
                 }
                 // Allow a later _maybeStart() to retry instead of blocking forever.
@@ -291,6 +313,7 @@ AFRAME.registerSystem('arnft', {
      * Stop the current tracker, or overtake a start still in flight. Every target
      * will have to load again on the next one.
      *
+     * @returns {Promise<void>} Resolves once the tracker has gone. Never rejects.
      * @private
      */
     _stopTracker: function () {
@@ -298,27 +321,44 @@ AFRAME.registerSystem('arnft', {
         this._generation++;
         this.tracker = null;
         this.starting = false;
+        this._inFlight = false;
         this.registry.resetLoadState();
-        if (tracker) {
-            // Its dispose() lets a native teardown error reach the caller. Whatever
-            // called this still has to finish: stop the camera, start a new tracker.
-            try {
-                tracker.dispose();
-            } catch (err) {
-                console.error('arnft: could not release the tracker', err);
-            }
+        return tracker ? this._disposeTracker(tracker) : Promise.resolve();
+    },
+
+    /**
+     * Release a tracker. On the same thread, `dispose()` lets a native teardown error
+     * reach the caller, and in a Worker it answers with a Promise. Whatever called
+     * this still has to finish: stop the camera, start a new tracker.
+     *
+     * @param {import('@webarkit/jsartoolkit-nft').NFTTracker} tracker
+     * @returns {Promise<void>} Resolves once it has gone. Never rejects.
+     * @private
+     */
+    _disposeTracker: function (tracker) {
+        const report = (err) => console.error('arnft: could not release the tracker', err);
+        try {
+            return Promise.resolve(tracker.dispose()).catch(report);
+        } catch (err) {
+            report(err);
+            return Promise.resolve();
         }
     },
 
     /**
-     * Replace the tracker, whose frame size is fixed when it is created.
+     * Replace the tracker, whose frame size is fixed when it is created. The new one
+     * waits for the old one to go, so it never runs beside the old Worker. An
+     * `<a-nft>` added in the meantime loads on the new one.
      *
      * @private
      */
     _restartTracker: function () {
         this._hideAll();
-        this._stopTracker();
-        this._maybeStart();
+        this._releasing = true;
+        this._stopTracker().then(() => {
+            this._releasing = false;
+            this._maybeStart();
+        });
     },
 
     /**
@@ -369,7 +409,8 @@ AFRAME.registerSystem('arnft', {
 
     /**
      * The tracker failed while running. This stops tracking for good, instead of
-     * repeating the same error on every frame of the render loop.
+     * repeating the same error on every frame of the render loop. A Worker that dies
+     * ends here too: it does not restart on the same thread, to keep one recovery path.
      *
      * @param {*} err
      * @private
@@ -414,6 +455,7 @@ AFRAME.registerSystem('arnft', {
                         'it will not be tracked',
                     reason,
                 ),
+            onTrackerFailed: (err) => this._onTrackerFailure(err),
         });
     },
 
@@ -533,6 +575,10 @@ AFRAME.registerSystem('arnft', {
      * tracking pass on a new frame, and hand the poses and `lost` transitions to the
      * components. With no target to track, or no new frame, there is nothing to do:
      * a detection pass is the expensive step (webarkit/Aframe-nft#12).
+     *
+     * While a Worker holds a frame, no other is captured: the copy would be wasted,
+     * because the Worker would answer `{ skipped: true }`. A same-thread result is
+     * routed at once, not in a microtask, so the frame that shows it has its pose.
      */
     tick: function () {
         if (!this.tracker || !this.videoReady) {
@@ -540,21 +586,51 @@ AFRAME.registerSystem('arnft', {
         }
         this._resize();
         this._applyProjection();
-        if (!this.registry.hasLoaded()) {
+        if (this._inFlight || !this.registry.hasLoaded()) {
             return;
         }
+        const tracker = this.tracker;
         let result;
         try {
             const frame = nextFrame(this.view);
             if (!frame) {
                 return;
             }
-            result = this.tracker.process(frame, performance.now());
+            result = tracker.process(frame, performance.now());
         } catch (err) {
             this._onTrackerFailure(err);
             return;
         }
-        routeFrameResult(this.registry, result);
+        if (typeof result.then === 'function') {
+            this._awaitResult(tracker, result);
+        } else {
+            routeFrameResult(this.registry, result);
+        }
+    },
+
+    /**
+     * Route the Worker's answer when it arrives. An answer from a tracker that has
+     * been stopped is dropped, including the "disposed" rejection its `dispose()`
+     * causes: `_stopTracker()` already let the next frame through.
+     *
+     * @param {import('@webarkit/jsartoolkit-nft').NFTTracker} tracker
+     * @param {Promise<import('@webarkit/jsartoolkit-nft').FrameResult>} pending
+     * @private
+     */
+    _awaitResult: function (tracker, pending) {
+        this._inFlight = true;
+        pending
+            .then((result) => {
+                if (this.tracker === tracker) {
+                    this._inFlight = false;
+                    routeFrameResult(this.registry, result);
+                }
+            })
+            .catch((err) => {
+                if (this.tracker === tracker) {
+                    this._onTrackerFailure(err);
+                }
+            });
     },
 });
 
@@ -778,8 +854,9 @@ AFRAME.registerComponent('nft-anchor', {
      * tracking starts.
      *
      * The matrix is written here because A-Frame renders right after the systems'
-     * `tick`, which is where this runs: the frame that shows the content must
-     * already have its pose. The component's own `tick` has run by then.
+     * `tick`, which is where this runs on the same thread: the frame that shows the
+     * content must already have its pose. The component's own `tick` has run by then.
+     * From a Worker the pose arrives between frames, and the next render uses it.
      *
      * @param {ArrayLike<number>} matrixGL_RH 4×4 pose matrix from jsartoolkitNFT.
      * @param {number} time Time (ms) of the frame this pose comes from.

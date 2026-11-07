@@ -47,6 +47,8 @@ follows the printed image in the camera view.
   same time, each with its own pose.
 - **Dynamic scenes** — `<a-nft>` elements can be added and removed while the scene runs.
 - **Stable poses** — optional 1€ smoothing reduces jitter without adding lag while moving.
+- **Optional Web Worker** — tracking can run off the page's thread, and falls back to it if the
+  Worker cannot start.
 - **Correct registration** — the video and the WebGL canvas share the same box (the AR.js
   approach), so the 3D lines up with the video for any camera parameter file, with no
   per-device tweaking.
@@ -169,6 +171,36 @@ See [`examples/dynamic.html`](examples/dynamic.html) for a working page. Two cav
 - **Removed targets stay loaded.** jsartoolkitNFT cannot unload a target. Adding a new
   `<a-nft>` with the same `url` reuses the loaded one instead of loading it again.
 
+### Tracking in a Web Worker
+
+By default tracking runs on the page's thread, where a search for a target can hold up rendering.
+`worker: true` moves it to a Web Worker:
+
+```html
+<a-scene embedded arnft="worker: true">
+```
+
+See `examples/worker.html`. The target loading, the projection and the content stay on the page,
+and each scene has one Worker. If the Worker cannot start, the page tracks on its own thread and
+logs `arnft: could not start the tracking Worker`. Missing files are noticed at once; a server that
+never answers takes 30 s.
+
+- **Serve the Worker files next to the bundle.** They are in `dist/`: `NFTTracker.worker.js`,
+  `NFTTracker_simd.worker.js`, `NFTTracker_td.worker.js` and `NFTTracker_td.pthread.js`, about 2.9 MB
+  in total. A page uses only one or two of them.
+- **Same origin.** A browser only starts a Worker from the page's own origin. If the bundle comes from
+  a CDN, copy the four files to your site and point `workerBase` at them, for example
+  `arnft="worker: true; workerBase: /nft/"`.
+- **`workerBase` is also needed when the script is a module**, as under `npm run dev`, because the
+  bundle cannot then tell which folder it came from. With a plain `<script>` you can leave it out.
+- **Threads.** On a cross-origin isolated page (`COOP` and `COEP` headers) the threaded build is used
+  on its own, with no attribute for it.
+- **Costs.** A pose arrives about one frame later than on the same thread, and the page downloads the
+  tracker's WASM twice: inside `AframeNft.js`, and in the Worker file.
+- **If a running Worker fails**, also while a target loads, the console shows one
+  `arnft: the tracker failed` error, the content is hidden and tracking stops until the page is
+  reloaded.
+
 ## Image targets 🎯
 
 An NFT target is a **descriptor set**: three files (`.fset`, `.fset3`, `.iset`) generated from
@@ -220,8 +252,10 @@ exact target in [webarkit/jsfeatNext#142](https://github.com/webarkit/jsfeatNext
 | `continuousDetection` | boolean | `true` | Keep looking for untracked targets while others are tracked. `false` is cheapest, but a second target entering the view is then not found |
 | `detectionInterval` | number | `300` | Minimum time (ms) between searches for untracked targets while others are tracked; `0` searches every frame |
 | `logLevel` | string | `warn` | Tracker console verbosity: `debug`, `info`, `warn` or `error`. `info` adds ARToolKit's per-frame tracking lines (`[info] Tracked page 0` …), useful when debugging detection |
+| `worker` | boolean | `false` | Track in a Web Worker, falling back to the page's thread if it cannot start. See [Tracking in a Web Worker](#tracking-in-a-web-worker) |
+| `workerBase` | string | empty | Folder of the Worker files, relative to the page and ending in `/`. Empty means next to the bundle |
 
-`continuousDetection`, `detectionInterval`, `lostTimeout` and `logLevel` can change while tracking
+`worker` and `workerBase` are read once, when the first tracker is created. `continuousDetection`, `detectionInterval`, `lostTimeout` and `logLevel` can change while tracking
 runs:
 
 ```js
@@ -390,6 +424,7 @@ flowchart LR
 | [`src/markerLoader.js`](src/markerLoader.js) | Loads descriptor sets into the tracker |
 | [`src/frames.js`](src/frames.js) | Picks the next frame to process, and routes each `process()` result to the `<a-nft>` components |
 | [`src/trackerSettings.js`](src/trackerSettings.js) | Turns `arnft` attributes into tracker settings |
+| [`src/trackerFactory.js`](src/trackerFactory.js) | Creates the tracker on the same thread or in a Worker, with the fallback between them |
 | [`src/nftMath.js`](src/nftMath.js) | Pose geometry: centring, lift, matrix normalisation |
 | [`src/poseFilter.js`](src/poseFilter.js) | 1€ pose smoothing that keeps the pose rigid, on top of [`@webarkit/oneeurofilter-ts`](https://github.com/webarkit/OneEuroFilter-ts) |
 | [`src/so3.js`](src/so3.js) | Rotation maths for the smoothing: log, exp and re-orthogonalisation |
@@ -404,7 +439,7 @@ Design history and the reasons behind these choices are in [DESIGN.md](DESIGN.md
 |---------|--------------|
 | `npm run dev` | Vite dev server with HMR; opens the examples index |
 | `npm test` | Unit tests (Vitest + jsdom) |
-| `npm run build` | Builds the IIFE bundle `dist/AframeNft.js` |
+| `npm run build` | Builds the IIFE bundle `dist/AframeNft.js` and copies the tracker's Worker files next to it |
 | `npm run preview` | Serves a production build |
 
 CI (GitHub Actions) runs the tests and the build on every push to `main`/`dev` and on every
@@ -428,11 +463,12 @@ Bug reports and pull requests are welcome in the
 
 - **At most 20 targets per page.** jsartoolkitNFT holds at most 20 targets and cannot unload
   one.
-- **Main-thread detection.** Detection runs on the main thread. Moving it off the main thread
-  is tracked in [#7](https://github.com/webarkit/Aframe-nft/issues/7).
-- **Runtime adds stall briefly.** Adding an `<a-nft>` at runtime briefly stalls the main thread
-  while the tracker builds the target's feature set. The downloads and the `.zft` check no longer
-  block.
+- **Tracking runs on the page's thread by default.** A search for a target can then hold up
+  rendering. `worker: true` avoids it; see
+  [Tracking in a Web Worker](#tracking-in-a-web-worker).
+- **Runtime adds stall briefly on the same thread.** Adding an `<a-nft>` at runtime briefly stalls
+  the page while the tracker builds the target's feature set. `worker: true` avoids that too. The
+  downloads and the `.zft` check no longer block.
 - **Runtime `url` changes are ignored.** Changing `url` on an existing `<a-nft>` has no effect;
   replace the element instead ([#15](https://github.com/webarkit/Aframe-nft/issues/15)).
 

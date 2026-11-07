@@ -30,6 +30,11 @@ describe('routeFrameResult', () => {
         registry = { get: (id) => records.get(id) ?? null };
     });
 
+    it('ignores a skipped frame', () => {
+        expect(() => routeFrameResult(registry, { skipped: true })).not.toThrow();
+        expect(component.onPose).not.toHaveBeenCalled();
+    });
+
     it('sends a pose and the frame time to its record', () => {
         routeFrameResult(registry, { time: 42, targets: [{ id: 0, found: true, pose }], transitions: [] });
         expect(component.onPose).toHaveBeenCalledWith(pose, 42);

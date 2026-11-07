@@ -27,7 +27,7 @@ function setup(...names) {
     const tracker = fakeTracker();
     const registry = new MarkerRegistry();
     const markers = names.map((name) => registry.add(marker(name)));
-    const handlers = { onLoaded: vi.fn(), onFailed: vi.fn() };
+    const handlers = { onLoaded: vi.fn(), onFailed: vi.fn(), onTrackerFailed: vi.fn() };
     return { tracker, registry, markers, handlers };
 }
 
@@ -96,14 +96,15 @@ describe('loadPendingMarkers', () => {
         expect(handlers.onFailed).toHaveBeenCalledWith(a, 'capacity: full');
     });
 
-    it('treats a rejected load as a failure, passing the error on', async () => {
+    it('treats a rejected call as the tracker failing: a failed load is a result, not a rejection', async () => {
         const { tracker, registry, markers: [a], handlers } = setup('a');
-        const error = new Error('boom');
+        const error = new Error('NFTTracker worker: crashed');
         loadPendingMarkers(tracker, registry, handlers);
         tracker.requests[0].reject(error);
         await flush();
         expect(a.failed).toBe(true);
-        expect(handlers.onFailed).toHaveBeenCalledWith(a, error);
+        expect(handlers.onTrackerFailed).toHaveBeenCalledWith(error);
+        expect(handlers.onFailed).not.toHaveBeenCalled();
     });
 
     it('does not report a throw from the component as a failed load', async () => {

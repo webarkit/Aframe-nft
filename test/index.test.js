@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { banner, version as expectedVersion } from '../src/version.js';
 
 vi.mock('aframe', () => ({}));
-vi.mock('@webarkit/jsartoolkit-nft', () => ({ createNFTTracker: vi.fn() }));
+vi.mock('@webarkit/jsartoolkit-nft', () => ({ createNFTTracker: vi.fn(), createNFTTrackerWorker: vi.fn() }));
 
 // The entry point registers everything on the AFRAME global: stub just enough
 // of it for the import to run.
