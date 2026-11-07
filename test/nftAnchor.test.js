@@ -69,7 +69,7 @@ function trackingAnchor() {
     return { system, anchor };
 }
 
-const smoothing = { smooth: true, smoothMinCutoff: 0.0001, smoothBeta: 0.01 };
+const smoothing = { smooth: true, smoothMinCutoff: 0.0001, smoothBeta: 0.01, smoothRotationBeta: 2 };
 
 // A fresh anchor, as A-Frame creates it: init(), then update({}). Its object3D
 // starts the way A-Frame's does: visible, with its matrix built from its own
@@ -239,7 +239,7 @@ describe('nft-anchor pause and play', () => {
     });
 
     it('starts smoothing afresh, not from the pose it stopped at', () => {
-        // At the default cutoff the filter would creep from the stale pose for a long time.
+        // Otherwise the filter would ease in from the stale pose.
         const anchor = startedAnchor();
         const reset = vi.spyOn(anchor.filter, 'reset');
         pauseEntity(anchor);
@@ -255,7 +255,19 @@ describe('nft-anchor smoothing filter', () => {
     it('builds one filter per <a-nft> across init() and the first update()', () => {
         createdFilters.length = 0;
         startedAnchor();
-        expect(createdFilters).toEqual([{ minCutoff: 0.0001, beta: 0.01 }]);
+        expect(createdFilters).toEqual([{ minCutoff: 0.0001, beta: 0.01, rotationBeta: 2 }]);
+    });
+
+    it('gives an <a-nft> with no smoothing attributes the documented settings', () => {
+        // Only what the schema gives, as A-Frame does for an attribute left out. A
+        // property missing from it would be dropped, so setting it would do nothing.
+        const anchor = startedAnchor();
+        anchor.data = Object.fromEntries(
+            Object.entries(definitions['nft-anchor'].schema).map(([key, property]) => [key, property.default]),
+        );
+        createdFilters.length = 0;
+        anchor.update({});
+        expect(createdFilters).toEqual([{ minCutoff: 0.0001, beta: 0.01, rotationBeta: 2 }]);
     });
 
     it('keeps the filter, and its state, when an unrelated property changes', () => {
@@ -267,14 +279,18 @@ describe('nft-anchor smoothing filter', () => {
         expect(anchor.filter).toBe(filter);
     });
 
-    it('rebuilds the filter when a smoothing property changes', () => {
+    it.each([
+        ['smoothMinCutoff', 1, { minCutoff: 1, beta: 0.01, rotationBeta: 2 }],
+        ['smoothBeta', 0.5, { minCutoff: 0.0001, beta: 0.5, rotationBeta: 2 }],
+        ['smoothRotationBeta', 5, { minCutoff: 0.0001, beta: 0.01, rotationBeta: 5 }],
+    ])('rebuilds the filter when %s changes', (property, value, built) => {
         const anchor = startedAnchor();
         const filter = anchor.filter;
         const oldData = { ...anchor.data };
-        anchor.data.smoothBeta = 0.5;
+        anchor.data[property] = value;
         anchor.update(oldData);
         expect(Object.is(anchor.filter, filter)).toBe(false);
-        expect(createdFilters.at(-1)).toEqual({ minCutoff: 0.0001, beta: 0.5 });
+        expect(createdFilters.at(-1)).toEqual(built);
     });
 
     it('filters with the frame time it is given, not the clock', () => {

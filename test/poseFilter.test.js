@@ -33,11 +33,29 @@ const expected = {
         [1.64794674955388, 0.634631595692942, -1.64794674955388],
         [8.89004437998307, -3.35227468997864, 0.777747519682249],
     ],
+    // The same filter at 0.0001 Hz and a beta of 2: the rotation's defaults. Worked
+    // out apart from the package and PoseFilter, with formulas that also give the two
+    // tables above. The last sample is left out: its jump to 10 rad would wrap around.
+    rotationDefaults: [
+        [0, 0, 0],
+        [0.5344330998808964, 0, -0.5344330998808964],
+        [0.8254058796248591, 0.18874026186715787, -0.8254058796248591],
+        [1.7011362426676555, 0.6795588212640402, -1.7011362426676555],
+        [1.922352520481473, 0.8803318479374815, -1.922352520481473],
+    ],
 };
 
 const settings = {
     defaults: { minCutoff: 0.0001, beta: 0.01 },
     responsive: { minCutoff: 1, beta: 0.5 },
+};
+
+// What makes the rotation match each `expected` table. `beta` stays at its default in
+// all of them: it belongs to the translation.
+const rotationSettings = {
+    rotationDefaults: {},
+    defaults: { minCutoff: 0.0001, rotationBeta: 0.01 },
+    responsive: { minCutoff: 1, rotationBeta: 0.5 },
 };
 
 /** A column-major pose: the rotation Rz · Ry · Rx (radians), then a translation. */
@@ -82,6 +100,17 @@ const expectClose = (actual, wanted, digits = 12) => {
     actual.forEach((v, i) => expect(v).toBeCloseTo(wanted[i], digits));
 };
 
+/** The angle between the rotations of two poses, in degrees. */
+const degreesBetween = (a, b) => {
+    let trace = 0;
+    for (const c of [0, 1, 2]) {
+        for (const r of [0, 1, 2]) {
+            trace += a[c * 4 + r] * b[c * 4 + r];
+        }
+    }
+    return (Math.acos(Math.min(1, Math.max(-1, (trace - 1) / 2))) * 180) / Math.PI;
+};
+
 /** Orthonormal columns, determinant +1, and a bottom row of 0 0 0 1. */
 const expectRigid = (m) => {
     const column = (c) => [m[c * 4], m[c * 4 + 1], m[c * 4 + 2]];
@@ -119,6 +148,21 @@ describe('PoseFilter', () => {
             const outputs = translationOf(new PoseFilter());
             outputs.forEach((row, i) => expectClose(row, expected.defaults[i]));
         });
+
+        it('is not changed by rotationBeta, which belongs to the rotation', () => {
+            const outputs = translationOf(new PoseFilter({ rotationBeta: 0.5 }));
+            outputs.forEach((row, i) => expectClose(row, expected.defaults[i]));
+        });
+    });
+
+    it('smooths the rotation and the translation of one pose each at its own rate', () => {
+        const filter = new PoseFilter();
+        times.slice(0, 5).forEach((t, i) => {
+            const [x, y, z] = samples[i];
+            const out = filter.filter(t, pose(0, 0, x, x, y, z));
+            expect(Math.atan2(out[1], out[0])).toBeCloseTo(expected.rotationDefaults[i][0], 12);
+            expectClose(out.slice(12, 15), expected.defaults[i]);
+        });
     });
 
     describe('rotation', () => {
@@ -131,9 +175,9 @@ describe('PoseFilter', () => {
             { axis: 'z', column: 0, build: (a) => pose(0, 0, a), angleOf: (m) => Math.atan2(m[1], m[0]) },
         ];
 
-        describe.each(['defaults', 'responsive'])('with the %s settings', (name) => {
+        describe.each(Object.keys(rotationSettings))('with the %s settings', (name) => {
             it.each(axes)('about $axis is smoothed like its angle', ({ column, build, angleOf }) => {
-                const filter = new PoseFilter(settings[name]);
+                const filter = new PoseFilter(rotationSettings[name]);
                 times.slice(0, 5).forEach((t, i) => {
                     const out = filter.filter(t, build(samples[i][column]));
                     expect(angleOf(out)).toBeCloseTo(expected[name][i][column], 12);
@@ -141,17 +185,63 @@ describe('PoseFilter', () => {
             });
 
             it('stays rigid on a hand-held camera', () => {
-                const filter = new PoseFilter(settings[name]);
+                const filter = new PoseFilter(rotationSettings[name]);
                 for (const { t, pose: p } of handHeld(300)) {
                     expectRigid(filter.filter(t, p));
                 }
             });
 
             it('stays rigid through jumps of more than 90 degrees', () => {
-                const filter = new PoseFilter(settings[name]);
+                const filter = new PoseFilter(rotationSettings[name]);
                 const jumps = [pose(0, 0, 0), pose(2.2, 0.5, -1), pose(-1, 2.5, 0.5), pose(0.3, -0.2, 3.1)];
                 jumps.forEach((p, i) => expectRigid(filter.filter(1000 + i * 16, p)));
             });
+        });
+
+        it('is not changed by beta, which belongs to the translation', () => {
+            const filter = new PoseFilter({ beta: 0.5 });
+            times.slice(0, 5).forEach((t, i) => {
+                const out = filter.filter(t, pose(0, 0, samples[i][0]));
+                expect(Math.atan2(out[1], out[0])).toBeCloseTo(expected.rotationDefaults[i][0], 12);
+            });
+        });
+
+        it('closes a 20 degree jump within half a second at the defaults', () => {
+            // The lag this setting exists for: with a rotationBeta of 0.01, 16 degrees
+            // are still left at this point.
+            const filter = new PoseFilter();
+            const target = pose(0, 0, (20 * Math.PI) / 180);
+            filter.filter(1000, pose(0, 0, 0));
+            let out;
+            for (let frame = 1; frame <= 15; frame++) {
+                out = filter.filter(1000 + (frame * 1000) / 30, target);
+            }
+            expect(degreesBetween(out, target)).toBeLessThan(1);
+        });
+
+        it('keeps the shake out of a still pose at the defaults', () => {
+            // What stops rotationBeta from simply being large: it opens the filter to
+            // noise as well. This noise is about the raw tracker's on a still camera.
+            let seed = 1;
+            const noise = () => {
+                seed = (seed * 16807) % 2147483647;
+                return (seed / 2147483647 - 0.5) * 0.014;
+            };
+            const noisy = () => pose(0.2 + noise(), -0.1 + noise(), 0.4 + noise(), 10, 20, -300);
+            const filter = new PoseFilter();
+            const steps = { input: [], output: [] };
+            let previous = null;
+            for (let frame = 0; frame < 300; frame++) {
+                const input = noisy();
+                const output = filter.filter(1000 + (frame * 1000) / 30, input);
+                if (previous && frame > 30) {
+                    steps.input.push(degreesBetween(input, previous.input));
+                    steps.output.push(degreesBetween(output, previous.output));
+                }
+                previous = { input, output };
+            }
+            const mean = (v) => v.reduce((sum, x) => sum + x, 0) / v.length;
+            expect(mean(steps.output)).toBeLessThan(mean(steps.input) / 10);
         });
 
         it('reaches the input when the cutoff is very high, on any axis and through any jump', () => {
