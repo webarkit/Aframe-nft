@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { createNFTTracker } from '@webarkit/jsartoolkit-nft';
+import { createNFTTracker, createNFTTrackerWorker } from '@webarkit/jsartoolkit-nft';
 import { MarkerRegistry } from '../src/markerRegistry.js';
 
 vi.mock('aframe', () => ({}));
-vi.mock('@webarkit/jsartoolkit-nft', () => ({ createNFTTracker: vi.fn() }));
+vi.mock('@webarkit/jsartoolkit-nft', () => ({ createNFTTracker: vi.fn(), createNFTTrackerWorker: vi.fn() }));
 
 // registerNFT.js registers everything on the AFRAME global. Capture the
 // definitions instead of running A-Frame.
@@ -26,6 +26,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
     createNFTTracker.mockReset();
+    createNFTTrackerWorker.mockReset();
 });
 
 const base = {
@@ -142,6 +143,75 @@ describe('arnft tracker start-up', () => {
         expect(s.starting).toBe(false);
         expect(error.mock.calls[0][0]).toContain('arnft: tracker init failed');
         error.mockRestore();
+    });
+
+    describe('with the worker attribute', () => {
+        const geometry = { frameWidth: 320, frameHeight: 240 };
+        const pending = () => new Promise(() => {});
+        const workerSystem = (data, overrides = {}) => {
+            const s = system({
+                videoReady: true,
+                data: { ...base, ...data },
+                view: { geometry },
+                _setupCamera() {},
+                ...overrides,
+            });
+            s.registry.add({ name: 'a', url: 'a', component: { onLost() {} } });
+            return s;
+        };
+        let timeout;
+
+        beforeEach(() => {
+            // Spied so that no real 30 s timer outlives a test.
+            timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(new AbortController().signal);
+        });
+
+        afterEach(() => {
+            timeout.mockRestore();
+        });
+
+        it('is off by default, with no workerBase', () => {
+            expect(definitions.arnft.schema.worker).toEqual({ type: 'boolean', default: false });
+            expect(definitions.arnft.schema.workerBase).toEqual({ type: 'string', default: '' });
+        });
+
+        it('creates the tracker on the same thread without it', () => {
+            createNFTTracker.mockImplementation(pending);
+            workerSystem({ worker: false, workerBase: '' })._maybeStart();
+            expect(createNFTTracker).toHaveBeenCalledTimes(1);
+            expect(createNFTTrackerWorker).not.toHaveBeenCalled();
+        });
+
+        it('creates the tracker in a Worker with it, with the same config', () => {
+            createNFTTrackerWorker.mockImplementation(pending);
+            workerSystem({ worker: true, workerBase: '' })._maybeStart();
+            expect(createNFTTracker).not.toHaveBeenCalled();
+            const [config, opts] = createNFTTrackerWorker.mock.lastCall;
+            expect(config).toMatchObject({ width: 320, height: 240, detectionInterval: 300 });
+            expect(opts).not.toHaveProperty('workerBase');
+        });
+
+        it('resolves workerBase against the page, like the other paths', () => {
+            createNFTTrackerWorker.mockImplementation(pending);
+            workerSystem({ worker: true, workerBase: '../dist/' })._maybeStart();
+            expect(createNFTTrackerWorker.mock.lastCall[1].workerBase).toBe(new URL('../dist/', document.baseURI).href);
+        });
+
+        it('a restart keeps the Worker, which a partial setAttribute turns off', async () => {
+            createNFTTrackerWorker.mockResolvedValueOnce({ dispose() {}, addNFTTargets: pending });
+            createNFTTrackerWorker.mockImplementationOnce(pending);
+            const s = workerSystem({ worker: true, workerBase: '/nft/' });
+            s._maybeStart();
+            await flush();
+
+            s.data = { ...base, worker: false, workerBase: '' };
+            s._restartTracker();
+            await flush();
+
+            expect(createNFTTrackerWorker).toHaveBeenCalledTimes(2);
+            expect(createNFTTrackerWorker.mock.lastCall[1].workerBase).toBe(new URL('/nft/', document.baseURI).href);
+            expect(createNFTTracker).not.toHaveBeenCalled();
+        });
     });
 });
 

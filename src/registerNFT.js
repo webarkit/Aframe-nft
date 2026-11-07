@@ -16,7 +16,7 @@
  * @module registerNFT
  */
 import 'aframe';
-import { createNFTTracker } from '@webarkit/jsartoolkit-nft';
+import { createNFTTracker, createNFTTrackerWorker } from '@webarkit/jsartoolkit-nft';
 import { CameraView } from '@webarkit/camera-view';
 import { withIdealSize } from './cameraConstraints';
 import { computeCenterOffset, computeLiftZ, toMatrixElements } from './nftMath';
@@ -25,6 +25,7 @@ import { MarkerRegistry } from './markerRegistry';
 import { loadPendingMarkers } from './markerLoader';
 import { nextFrame, routeFrameResult } from './frames';
 import { runtimePatch, trackerConfig } from './trackerSettings';
+import { createTracker } from './trackerFactory';
 import { DEFAULT_LOG_LEVEL, LOG_LEVEL_NAMES } from './logLevel';
 
 /**
@@ -73,6 +74,12 @@ AFRAME.registerSystem('arnft', {
         // error. WebARKitLib's camera parameter table still prints at every
         // level (webarkit/WebARKitLib#113).
         logLevel: { type: 'string', default: DEFAULT_LOG_LEVEL, oneOf: LOG_LEVEL_NAMES },
+        // Track in a Web Worker, falling back to the same thread if it cannot start.
+        // Read when the tracker is created.
+        worker: { type: 'boolean', default: false },
+        // Folder of the Worker files, resolved against the page. Empty: next to the
+        // bundle, which needs the bundle to load through a plain <script>.
+        workerBase: { type: 'string', default: '' },
     },
 
     /**
@@ -264,17 +271,25 @@ AFRAME.registerSystem('arnft', {
         const { frameWidth, frameHeight } = this.view.geometry;
         this._frameSize = { width: frameWidth, height: frameHeight };
         const cameraParam = this._cameraParam || resolveUrl(this.data.cameraParam);
+        const workerOptions = this._workerOptions || {
+            worker: this.data.worker,
+            workerBase: this.data.workerBase && resolveUrl(this.data.workerBase),
+        };
         const startData = this.data;
         const generation = this._generation;
-        createNFTTracker(trackerConfig(startData, this._frameSize, cameraParam))
+        createTracker(trackerConfig(startData, this._frameSize, cameraParam), workerOptions, {
+            createNFTTracker,
+            createNFTTrackerWorker,
+        })
             .then((tracker) => {
                 if (generation !== this._generation) {
                     tracker.dispose();
                     return;
                 }
-                // Kept once it has worked: a partial setAttribute('arnft', 'key: value')
-                // returns cameraParam to its default, which a restart must not pick up.
+                // Kept once they have worked: a partial setAttribute('arnft', 'key: value')
+                // returns these to their defaults, which a restart must not pick up.
                 this._cameraParam = cameraParam;
+                this._workerOptions = workerOptions;
                 this._onTrackerReady(tracker, startData);
             })
             .catch((err) => {
