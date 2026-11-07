@@ -228,8 +228,35 @@ Decisions made during Phase 2 (see also Decision Log):
   have a picture processed twice. Teardown (#16) hangs on an internal `arnft-lifecycle` component on
   the scene, because A-Frame never calls `remove()` on a system. That component does not run before
   the scene has loaded, so a `MutationObserver` covers that time.
-- Worker-based detection (Approach A) as a perf optimization (#7). Re-evaluate against
-  jsartoolkitNFT's threaded build (`@webarkit/jsartoolkit-nft/td`), which since 1.13.0 runs
-  detection off the main thread but uses pthreads (SharedArrayBuffer, so the page must be
-  cross-origin isolated with COOP/COEP headers).
+- ✅ **Tracking in a Worker, on request (#7).** `arnft="worker: true"` uses jsartoolkitNFT's own Worker
+  through `createNFTTrackerWorker`, which supersedes the protocol #7 proposed. `build: 'auto'` picks
+  `td` on a cross-origin isolated page and `simd` otherwise. One bundle, and the four Worker files are
+  copied next to it at build time. **The default stays off whatever the numbers say: changing it is a
+  separate decision.** If the Worker cannot start within 30 s, the page tracks on the same thread with
+  a warning; missing files reject at once. A Worker that fails while running hides the content once
+  and stops, with no restart on the same thread, to keep one recovery path. There is no watchdog for a
+  Worker that hangs with no error: nothing suggests it happens. A restart waits for the old Worker to
+  go, at most 2 s by the package's `dispose()`. A start overtaken by a restart is not waited for: it is
+  disposed when it resolves, so on a frame-size change during start-up two Workers can overlap for the
+  length of that start. Under `npm run dev`, Vite transforms the Worker files (inline source maps take
+  them from 716 KB to 2 MB), and they still run, so the dev server needs nothing special.
+
+  Measured on a desktop only, not a phone: 8 threads, headless Chromium with software GL, a fake camera,
+  320×240 frames, two targets, medians over about 400 frames. The tracker's build differs between the
+  columns, as it will in use: `default` on the same thread, `simd` in the Worker.
+
+  | Desktop | Same thread | Worker |
+  |---|---|---|
+  | Searching, `processMs` (p95) | 41 ms (59) | 142 ms (661) |
+  | Searching, time between page frames | 50 ms | 16.7 ms |
+  | Tracking, `processMs` (p95) | 2.9 ms (10) | 9.9 ms (38) |
+  | Tracking, time between page frames | 16.7 ms | 16.7 ms |
+  | 80×60 canvas, so software GL costs little: searching, `processMs` (p95) | 40 ms (45) | 83 ms (175) |
+  | 80×60 canvas: tracking, `processMs` (p95) | 2.7 ms (3.8) | 3.5 ms (4.1) |
+
+  The search no longer holds up the page, which is what the Worker is for, but each search takes about
+  twice as long in the Worker even with little else running. The cause was not investigated. Elsewhere
+  the larger Worker numbers come at least partly from the page now rendering at full rate on the same
+  CPU, because they mostly go away with the small canvas. Pose latency with the small canvas is 3.7 ms
+  in the Worker against 2.8 ms on the same thread. Phone numbers: not measured yet.
 - Optional tracking-confidence threshold (not yet implemented).
