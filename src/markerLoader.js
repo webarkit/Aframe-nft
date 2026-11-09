@@ -35,12 +35,15 @@ const SLOW_LOAD_MS = 30000;
  * @param {object} handlers
  * @param {function(MarkerRecord, NFTData): void} handlers.onLoaded Called when a
  *     marker has loaded, with the target's size.
- * @param {function(MarkerRecord, *): void} handlers.onFailed Called once per failed
- *     marker, with the reason: `<reason>: <message>` from the tracker, or an Error.
+ * @param {function(MarkerRecord, string): void} handlers.onFailed Called once per failed
+ *     marker, with the reason: `<reason>: <message>` from the tracker.
+ * @param {function(*): void} handlers.onTrackerFailed Called when the tracker itself
+ *     failed, for example a Worker that died. `addNFTTargets()` reports a failed load
+ *     in its result, so a rejected call is never about one target.
  */
-export function loadPendingMarkers(tracker, registry, { onLoaded, onFailed }) {
+export function loadPendingMarkers(tracker, registry, { onLoaded, onFailed, onTrackerFailed }) {
     for (const marker of registry.unloaded()) {
-        loadMarker(tracker, registry, marker, onLoaded, onFailed);
+        loadMarker(tracker, registry, marker, onLoaded, onFailed, onTrackerFailed);
     }
 }
 
@@ -51,10 +54,11 @@ export function loadPendingMarkers(tracker, registry, { onLoaded, onFailed }) {
  * @param {MarkerRegistry} registry
  * @param {MarkerRecord} marker
  * @param {function(MarkerRecord, NFTData): void} onLoaded
- * @param {function(MarkerRecord, *): void} onFailed
+ * @param {function(MarkerRecord, string): void} onFailed
+ * @param {function(*): void} onTrackerFailed
  * @private
  */
-function loadMarker(tracker, registry, marker, onLoaded, onFailed) {
+function loadMarker(tracker, registry, marker, onLoaded, onFailed, onTrackerFailed) {
     registry.markLoading(marker);
 
     // After resetLoadState the tracker behind this load is gone, and the marker may
@@ -71,6 +75,14 @@ function loadMarker(tracker, registry, marker, onLoaded, onFailed) {
         if (registry.has(marker)) {
             onFailed(marker, reason);
         }
+    };
+
+    const onRejected = (err) => {
+        if (isStale()) {
+            return;
+        }
+        registry.markLoadFailed(marker);
+        onTrackerFailed(err);
     };
 
     const onResult = ([load]) => {
@@ -99,11 +111,11 @@ function loadMarker(tracker, registry, marker, onLoaded, onFailed) {
         }
     }, SLOW_LOAD_MS);
 
-    // fail only sees a load that failed. A throw from onLoaded is a separate
+    // onRejected only sees a call that failed. A throw from onLoaded is a separate
     // problem: the target did load and is tracked.
     tracker
         .addNFTTargets([marker.url], { origin: 'corner' })
-        .then(onResult, fail)
+        .then(onResult, onRejected)
         .catch((err) => console.error(`arnft: NFT marker "${marker.name}" loaded, but its <a-nft> could not use it`, err))
         .finally(() => clearTimeout(slowLoad));
 }

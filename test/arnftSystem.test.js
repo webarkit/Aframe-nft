@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { createNFTTracker } from '@webarkit/jsartoolkit-nft';
+import { createNFTTracker, createNFTTrackerWorker } from '@webarkit/jsartoolkit-nft';
 import { MarkerRegistry } from '../src/markerRegistry.js';
 
 vi.mock('aframe', () => ({}));
-vi.mock('@webarkit/jsartoolkit-nft', () => ({ createNFTTracker: vi.fn() }));
+vi.mock('@webarkit/jsartoolkit-nft', () => ({ createNFTTracker: vi.fn(), createNFTTrackerWorker: vi.fn() }));
 
 // registerNFT.js registers everything on the AFRAME global. Capture the
 // definitions instead of running A-Frame.
@@ -26,6 +26,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
     createNFTTracker.mockReset();
+    createNFTTrackerWorker.mockReset();
 });
 
 const base = {
@@ -143,6 +144,116 @@ describe('arnft tracker start-up', () => {
         expect(error.mock.calls[0][0]).toContain('arnft: tracker init failed');
         error.mockRestore();
     });
+
+    describe('with the worker attribute', () => {
+        const geometry = { frameWidth: 320, frameHeight: 240 };
+        const pending = () => new Promise(() => {});
+        const workerSystem = (data, overrides = {}) => {
+            const s = system({
+                videoReady: true,
+                data: { ...base, ...data },
+                view: { geometry },
+                _setupCamera() {},
+                ...overrides,
+            });
+            s.registry.add({ name: 'a', url: 'a', component: { onLost() {} } });
+            return s;
+        };
+        let timeout;
+
+        beforeEach(() => {
+            // Spied so that no real 30 s timer outlives a test.
+            timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(new AbortController().signal);
+        });
+
+        afterEach(() => {
+            timeout.mockRestore();
+        });
+
+        it('is off by default, with no workerBase', () => {
+            expect(definitions.arnft.schema.worker).toEqual({ type: 'boolean', default: false });
+            expect(definitions.arnft.schema.workerBase).toEqual({ type: 'string', default: '' });
+        });
+
+        it('creates the tracker on the same thread without it', () => {
+            createNFTTracker.mockImplementation(pending);
+            workerSystem({ worker: false, workerBase: '' })._maybeStart();
+            expect(createNFTTracker).toHaveBeenCalledTimes(1);
+            expect(createNFTTrackerWorker).not.toHaveBeenCalled();
+        });
+
+        it('creates the tracker in a Worker with it, with the same config', () => {
+            createNFTTrackerWorker.mockImplementation(pending);
+            workerSystem({ worker: true, workerBase: '' })._maybeStart();
+            expect(createNFTTracker).not.toHaveBeenCalled();
+            const [config, opts] = createNFTTrackerWorker.mock.lastCall;
+            expect(config).toMatchObject({ width: 320, height: 240, detectionInterval: 300 });
+            expect(opts).not.toHaveProperty('workerBase');
+        });
+
+        it('resolves workerBase against the page, like the other paths', () => {
+            createNFTTrackerWorker.mockImplementation(pending);
+            workerSystem({ worker: true, workerBase: '../dist/' })._maybeStart();
+            expect(createNFTTrackerWorker.mock.lastCall[1].workerBase).toBe(new URL('../dist/', document.baseURI).href);
+        });
+
+        it('adds a trailing slash to workerBase before resolving when missing', () => {
+            createNFTTrackerWorker.mockImplementation(pending);
+            workerSystem({ worker: true, workerBase: '/nft' })._maybeStart();
+            expect(createNFTTrackerWorker.mock.lastCall[1].workerBase).toBe(new URL('/nft/', document.baseURI).href);
+        });
+
+        it('says nothing and compiles nothing when a Worker start fails after the scene was removed', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+            const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+            let failStart;
+            createNFTTrackerWorker.mockImplementationOnce(() => new Promise((_, reject) => (failStart = reject)));
+            const s = workerSystem({ worker: true, workerBase: '' }, { view: { geometry, destroy() {} } });
+            s._maybeStart();
+            s._teardown();
+            failStart(new Error('the worker failed to start'));
+            await flush();
+
+            expect(createNFTTracker).not.toHaveBeenCalled();
+            expect(warn).not.toHaveBeenCalled();
+            expect(error).not.toHaveBeenCalled();
+            warn.mockRestore();
+            error.mockRestore();
+        });
+
+        it('a restart keeps the Worker, which a partial setAttribute turns off', async () => {
+            createNFTTrackerWorker.mockResolvedValueOnce({ dispose() {}, addNFTTargets: pending });
+            createNFTTrackerWorker.mockImplementationOnce(pending);
+            const s = workerSystem({ worker: true, workerBase: '/nft/' });
+            s._maybeStart();
+            await flush();
+
+            s.data = { ...base, worker: false, workerBase: '' };
+            s._restartTracker();
+            await flush();
+
+            expect(createNFTTrackerWorker).toHaveBeenCalledTimes(2);
+            expect(createNFTTrackerWorker.mock.lastCall[1].workerBase).toBe(new URL('/nft/', document.baseURI).href);
+            expect(createNFTTracker).not.toHaveBeenCalled();
+        });
+
+        it('a restart after a Worker startup fallback stays on the same thread', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+            createNFTTrackerWorker.mockRejectedValueOnce(new Error('the worker failed to start'));
+            createNFTTracker.mockResolvedValueOnce({ dispose() {}, addNFTTargets: pending });
+            createNFTTracker.mockImplementationOnce(pending);
+            const s = workerSystem({ worker: true, workerBase: '/nft/' });
+            s._maybeStart();
+            await flush();
+
+            s._restartTracker();
+            await flush();
+
+            expect(createNFTTrackerWorker).toHaveBeenCalledTimes(1);
+            expect(createNFTTracker).toHaveBeenCalledTimes(2);
+            warn.mockRestore();
+        });
+    });
 });
 
 describe('arnft per-frame work', () => {
@@ -214,6 +325,182 @@ describe('arnft per-frame work', () => {
         expect(s.stopped).toBe(true);
         error.mockRestore();
     });
+
+    it('still routes a same-thread result within tick(): A-Frame renders right after it', () => {
+        const pose = new Float64Array(16);
+        const onPose = vi.fn();
+        const tracker = { process: vi.fn(() => ({ time: 1, targets: [{ id: 0, found: true, pose }], transitions: [] })) };
+        const view = capturingView();
+        const s = system({ tracker, videoReady: true, view });
+        s.registry.setLoaded(s.registry.add({ name: 'a', url: 'a', component: { onPose } }), 0, size);
+
+        s.tick();
+        expect(onPose).toHaveBeenCalledTimes(1);
+
+        s.tick();
+        expect(view.getImage).toHaveBeenCalledTimes(2);
+    });
+
+    describe('in a Worker, where process() answers later', () => {
+        const pose = new Float64Array(16);
+        const found = { time: 1, targets: [{ id: 0, found: true, pose }], transitions: [] };
+
+        // A tracker whose process() returns a promise the test settles.
+        const workerTracker = () => {
+            const tracker = { calls: [], dispose: vi.fn(() => Promise.resolve()) };
+            tracker.process = vi.fn(
+                () => new Promise((resolve, reject) => tracker.calls.push({ resolve, reject })),
+            );
+            return tracker;
+        };
+
+        const asyncSetup = () => {
+            const onPose = vi.fn();
+            const onLost = vi.fn();
+            const tracker = workerTracker();
+            const view = capturingView();
+            const s = system({ tracker, videoReady: true, view });
+            s.registry.setLoaded(s.registry.add({ name: 'a', url: 'a', component: { onPose, onLost } }), 0, size);
+            return { s, view, tracker, onPose, onLost };
+        };
+
+        it('captures no frame while a process() is in flight', () => {
+            const { s, view, tracker } = asyncSetup();
+            s.tick();
+            s.tick();
+            expect(view.getImage).toHaveBeenCalledTimes(1);
+            expect(tracker.process).toHaveBeenCalledTimes(1);
+        });
+
+        it('keeps the layout and projection in sync while one is in flight', () => {
+            const { s } = asyncSetup();
+            s._applyProjection = vi.fn();
+            s.tick();
+            s.tick();
+            expect(s._applyProjection).toHaveBeenCalledTimes(2);
+        });
+
+        it('routes the result when it arrives, with its time, then accepts the next frame', async () => {
+            const { s, view, tracker, onPose } = asyncSetup();
+            s.tick();
+            expect(onPose).not.toHaveBeenCalled();
+
+            tracker.calls[0].resolve(found);
+            await flush();
+            expect(onPose).toHaveBeenCalledWith(pose, 1);
+
+            s.tick();
+            expect(view.getImage).toHaveBeenCalledTimes(2);
+        });
+
+        it('ignores a skipped result, then accepts the next frame', async () => {
+            const { s, view, tracker, onPose } = asyncSetup();
+            s.tick();
+            tracker.calls[0].resolve({ skipped: true });
+            await flush();
+            expect(onPose).not.toHaveBeenCalled();
+            s.tick();
+            expect(view.getImage).toHaveBeenCalledTimes(2);
+        });
+
+        it('drops a result that arrives after the tracker was stopped', async () => {
+            const { s, tracker, onPose } = asyncSetup();
+            s.tick();
+            s._stopTracker();
+            tracker.calls[0].resolve(found);
+            await flush();
+            expect(onPose).not.toHaveBeenCalled();
+        });
+
+        it('says nothing about the rejection its own dispose() causes', async () => {
+            const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+            const { s, tracker, onLost } = asyncSetup();
+            s.tick();
+            s._stopTracker();
+            tracker.calls[0].reject(new Error('NFTTracker: disposed'));
+            await flush();
+            expect(error).not.toHaveBeenCalled();
+            expect(onLost).not.toHaveBeenCalled();
+            expect(s.stopped).toBe(false);
+            error.mockRestore();
+        });
+
+        it('logs once, hides the content and stops when a running Worker fails', async () => {
+            const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+            const { s, view, tracker, onLost } = asyncSetup();
+            s.tick();
+            tracker.calls[0].reject(new Error('NFTTracker worker: crashed'));
+            await flush();
+            s.tick();
+
+            expect(error).toHaveBeenCalledTimes(1);
+            expect(error.mock.calls[0][0]).toContain('arnft:');
+            expect(onLost).toHaveBeenCalledTimes(1);
+            expect(tracker.dispose).toHaveBeenCalledTimes(1);
+            expect(s.tracker).toBeNull();
+            expect(s.stopped).toBe(true);
+            expect(view.getImage).toHaveBeenCalledTimes(1);
+            error.mockRestore();
+        });
+
+        it('logs once, hides the content and stops when the Worker dies while targets load', async () => {
+            const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+            const onLost = vi.fn();
+            const rejects = [];
+            const tracker = {
+                dispose: vi.fn(() => Promise.resolve()),
+                addNFTTargets: vi.fn(() => new Promise((_, reject) => rejects.push(reject))),
+            };
+            const s = system({ tracker, videoReady: true });
+            s.registry.add({ name: 'a', url: 'a', component: { onLost } });
+            s.registry.add({ name: 'b', url: 'b', component: { onLost } });
+            s._loadPendingMarkers();
+
+            const died = new Error('NFTTracker worker: crashed');
+            rejects.forEach((reject) => reject(died));
+            await flush();
+
+            expect(error).toHaveBeenCalledTimes(1);
+            expect(error.mock.calls[0][0]).toContain('the tracker failed');
+            expect(onLost).toHaveBeenCalledTimes(2);
+            expect(s.tracker).toBeNull();
+            expect(s.stopped).toBe(true);
+            error.mockRestore();
+        });
+
+        it('logs and stops when routing a result throws, leaving no unhandled rejection', async () => {
+            const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+            const { s, tracker, onPose } = asyncSetup();
+            onPose.mockImplementation(() => {
+                throw new Error('bad component');
+            });
+            s.tick();
+            tracker.calls[0].resolve(found);
+            await flush();
+            expect(error.mock.calls[0][0]).toContain('arnft:');
+            expect(s.stopped).toBe(true);
+            error.mockRestore();
+        });
+
+        it('a new tracker does not wait for a frame the old one still owes', async () => {
+            const { s, view, tracker } = asyncSetup();
+            s.tick();
+            s._stopTracker();
+            await flush();
+
+            const fresh = workerTracker();
+            s.tracker = fresh;
+            s.registry.setLoaded(s.registry.markers[0], 0, size);
+            s.tick();
+            expect(fresh.process).toHaveBeenCalledTimes(1);
+
+            // The old answer, however late, says nothing about the new tracker's frame.
+            tracker.calls[0].resolve(found);
+            await flush();
+            s.tick();
+            expect(view.getImage).toHaveBeenCalledTimes(2);
+        });
+    });
 });
 
 describe('arnft camera changes', () => {
@@ -280,6 +567,68 @@ describe('arnft camera changes', () => {
         expect(createNFTTracker.mock.lastCall[0]).toMatchObject({ width: 318, height: 239 });
         expect(s.tracker).toBe(fresh);
         expect(fresh.addNFTTargets).toHaveBeenCalledWith(['a'], { origin: 'corner' });
+    });
+
+    describe('a restart while the old Worker is still closing', () => {
+        const closing = () => {
+            let finish;
+            const old = { dispose: vi.fn(() => new Promise((resolve) => (finish = resolve))) };
+            createNFTTracker.mockImplementation(() => new Promise(() => {}));
+            const { s } = loadedSystem({
+                tracker: old,
+                videoReady: true,
+                view: { geometry: { frameWidth: 318, frameHeight: 239 } },
+            });
+            return { s, finish: () => finish() };
+        };
+
+        it('starts no new tracker until the old one is gone', async () => {
+            const { s, finish } = closing();
+            s._restartTracker();
+            await flush();
+            expect(createNFTTracker).not.toHaveBeenCalled();
+
+            finish();
+            await flush();
+            expect(createNFTTracker).toHaveBeenCalledTimes(1);
+        });
+
+        it('nor for an <a-nft> added in the meantime, which waits with the rest', async () => {
+            const { s, finish } = closing();
+            s._restartTracker();
+            s.registerMarker({ name: 'b', url: 'b', component: { onLost() {} } });
+            await flush();
+            expect(createNFTTracker).not.toHaveBeenCalled();
+
+            finish();
+            await flush();
+            expect(createNFTTracker).toHaveBeenCalledTimes(1);
+        });
+
+        it('starts nothing if the scene is removed in the meantime', async () => {
+            const { s, finish } = closing();
+            s.view.destroy = vi.fn();
+            s._restartTracker();
+            s._teardown();
+            finish();
+            await flush();
+            expect(createNFTTracker).not.toHaveBeenCalled();
+        });
+    });
+
+    it('logs a Worker dispose() that rejects, and still restarts', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        createNFTTracker.mockImplementation(() => new Promise(() => {}));
+        const { s } = loadedSystem({
+            tracker: { dispose: vi.fn(() => Promise.reject(new Error('teardown failed'))) },
+            videoReady: true,
+            view: { geometry: { frameWidth: 318, frameHeight: 239 } },
+        });
+        s._restartTracker();
+        await flush();
+        expect(error.mock.calls[0][0]).toContain('arnft:');
+        expect(createNFTTracker).toHaveBeenCalledTimes(1);
+        error.mockRestore();
     });
 
     it('a restart keeps the first cameraParam, which a partial setAttribute resets', async () => {

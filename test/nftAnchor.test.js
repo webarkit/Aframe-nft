@@ -3,7 +3,7 @@ import { routeFrameResult } from '../src/frames.js';
 import { MarkerRegistry } from '../src/markerRegistry.js';
 
 vi.mock('aframe', () => ({}));
-vi.mock('@webarkit/jsartoolkit-nft', () => ({ createNFTTracker: vi.fn() }));
+vi.mock('@webarkit/jsartoolkit-nft', () => ({ createNFTTracker: vi.fn(), createNFTTrackerWorker: vi.fn() }));
 
 // Records every PoseFilter construction. Each one means a reset of the
 // smoothing state.
