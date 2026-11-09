@@ -231,9 +231,13 @@ Decisions made during Phase 2 (see also Decision Log):
 - ✅ **Tracking in a Worker, on request (#7).** `arnft="worker: true"` uses jsartoolkitNFT's own Worker
   through `createNFTTrackerWorker`, which supersedes the protocol #7 proposed. `build: 'auto'` picks
   `td` on a cross-origin isolated page and `simd` otherwise. One bundle, and the four Worker files are
-  copied next to it at build time. **The default stays off whatever the numbers say: changing it is a
-  separate decision.** If the Worker cannot start within 30 s, the page tracks on the same thread with
-  a warning; missing files reject at once. A Worker that fails while running hides the content once
+  copied next to it at build time. **Ticket #7's off-thread goal is met only on request (`worker: true`),
+  and the default stays `false` whatever the desktop numbers say: changing it is a separate decision.**
+  A Worker requires the four Worker files to be served from the page's origin (with `workerBase` when the
+  bundle is loaded from a CDN or as an ES module), downloads the tracker's WASM twice, adds a frame of
+  pose latency, and phone measurements have not been taken yet. If the Worker cannot start within 30 s,
+  the page tracks on the same thread with a warning and caches that fallback so later frame-size restarts
+  stay on the same thread; missing files reject at once. A Worker that fails while running hides the content once
   and stops, with no restart on the same thread, to keep one recovery path. That includes a rejected
   `addNFTTargets`, which reports a failed load in its result and so only rejects when the tracker
   itself failed. There is no watchdog for a Worker that hangs with no error: nothing suggests it

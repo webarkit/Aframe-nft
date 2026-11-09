@@ -28,12 +28,14 @@ export const WORKER_START_TIMEOUT_MS = 30000;
  * @param {function(): boolean} [options.isStale] Whether this tracker is still wanted.
  *     If not, a Worker that failed to start is not replaced: the same-thread build
  *     would compile on the page, for a tracker that is disposed straight away.
+ * @param {function(): void} [options.onFallback] Called when the Worker fails to start
+ *     and the same-thread tracker is used instead.
  * @param {object} factories
  * @param {function(object): Promise<object>} factories.createNFTTracker
  * @param {function(object, object): Promise<object>} factories.createNFTTrackerWorker
  * @returns {Promise<import('@webarkit/jsartoolkit-nft').NFTTracker>}
  */
-export async function createTracker(config, { worker, workerBase, isStale }, { createNFTTracker, createNFTTrackerWorker }) {
+export async function createTracker(config, { worker, workerBase, isStale, onFallback }, { createNFTTracker, createNFTTrackerWorker }) {
     if (!worker) {
         return createNFTTracker(config);
     }
@@ -49,6 +51,7 @@ export async function createTracker(config, { worker, workerBase, isStale }, { c
             throw err;
         }
         console.warn('arnft: could not start the tracking Worker; tracking on the same thread instead', err);
+        onFallback?.();
         return createNFTTracker(config);
     }
 }

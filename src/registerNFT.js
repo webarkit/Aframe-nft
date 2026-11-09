@@ -276,16 +276,24 @@ AFRAME.registerSystem('arnft', {
         const { frameWidth, frameHeight } = this.view.geometry;
         this._frameSize = { width: frameWidth, height: frameHeight };
         const cameraParam = this._cameraParam || resolveUrl(this.data.cameraParam);
+        const base = this.data.workerBase;
         const workerOptions = this._workerOptions || {
             worker: this.data.worker,
-            workerBase: this.data.workerBase && resolveUrl(this.data.workerBase),
+            workerBase: base && resolveUrl(base.endsWith('/') ? base : `${base}/`),
         };
+        let effectiveWorkerOptions = workerOptions;
         const startData = this.data;
         const generation = this._generation;
         const isStale = () => generation !== this._generation;
         createTracker(
             trackerConfig(startData, this._frameSize, cameraParam),
-            { ...workerOptions, isStale },
+            {
+                ...workerOptions,
+                isStale,
+                onFallback: () => {
+                    effectiveWorkerOptions = { worker: false, workerBase: '' };
+                },
+            },
             { createNFTTracker, createNFTTrackerWorker },
         )
             .then((tracker) => {
@@ -296,7 +304,7 @@ AFRAME.registerSystem('arnft', {
                 // Kept once they have worked: a partial setAttribute('arnft', 'key: value')
                 // returns these to their defaults, which a restart must not pick up.
                 this._cameraParam = cameraParam;
-                this._workerOptions = workerOptions;
+                this._workerOptions = effectiveWorkerOptions;
                 this._onTrackerReady(tracker, startData);
             })
             .catch((err) => {

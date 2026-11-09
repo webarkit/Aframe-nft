@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import path from 'node:path';
 import { defineConfig } from 'vite';
 
 const require = createRequire(import.meta.url);
 const pkg = require('./package.json');
-const jsartoolkitNFT = require('@webarkit/jsartoolkit-nft/package.json');
+const jsartoolkitNFTPath = require.resolve('@webarkit/jsartoolkit-nft/package.json');
+const jsartoolkitNFT = require(jsartoolkitNFTPath);
+const jsartoolkitNFTDist = path.join(path.dirname(jsartoolkitNFTPath), 'dist');
 
 // What createNFTTrackerWorker() loads, from the folder of AframeNft.js by default.
 const TRACKER_WORKER_FILES = [
@@ -21,13 +24,17 @@ const TRACKER_WORKER_FILES = [
  * @returns {import('vite').Plugin}
  */
 function copyTrackerWorkerFiles() {
+    let outDir;
     return {
         name: 'copy-tracker-worker-files',
         apply: 'build',
+        configResolved(config) {
+            outDir = path.resolve(config.root, config.build.outDir);
+        },
         // Not earlier: the build empties dist/ when it starts.
         closeBundle() {
             for (const file of TRACKER_WORKER_FILES) {
-                fs.copyFileSync(`node_modules/@webarkit/jsartoolkit-nft/dist/${file}`, `dist/${file}`);
+                fs.copyFileSync(path.join(jsartoolkitNFTDist, file), path.join(outDir, file));
             }
         },
     };

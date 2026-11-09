@@ -47,10 +47,12 @@ describe('createTracker', () => {
 
     it('falls back to the same thread and warns when the Worker cannot start', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const onFallback = vi.fn();
         const f = factories();
         f.createNFTTrackerWorker.mockRejectedValue(new Error('the worker failed to start'));
-        expect(await createTracker(config, { worker: true, workerBase: '' }, f)).toBe('same');
+        expect(await createTracker(config, { worker: true, workerBase: '', onFallback }, f)).toBe('same');
         expect(f.createNFTTracker).toHaveBeenCalledWith(config);
+        expect(onFallback).toHaveBeenCalledTimes(1);
         expect(warn).toHaveBeenCalledTimes(1);
         expect(warn.mock.calls[0][0]).toContain('arnft:');
         warn.mockRestore();
@@ -69,11 +71,15 @@ describe('createTracker', () => {
 
     it('does not fall back for a start that was overtaken: nobody wants that tracker', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const onFallback = vi.fn();
         const f = factories();
         const failure = new Error('the worker failed to start');
         f.createNFTTrackerWorker.mockRejectedValue(failure);
-        await expect(createTracker(config, { worker: true, workerBase: '', isStale: () => true }, f)).rejects.toBe(failure);
+        await expect(
+            createTracker(config, { worker: true, workerBase: '', isStale: () => true, onFallback }, f),
+        ).rejects.toBe(failure);
         expect(f.createNFTTracker).not.toHaveBeenCalled();
+        expect(onFallback).not.toHaveBeenCalled();
         expect(warn).not.toHaveBeenCalled();
         warn.mockRestore();
     });

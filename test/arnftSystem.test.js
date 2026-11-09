@@ -197,6 +197,12 @@ describe('arnft tracker start-up', () => {
             expect(createNFTTrackerWorker.mock.lastCall[1].workerBase).toBe(new URL('../dist/', document.baseURI).href);
         });
 
+        it('adds a trailing slash to workerBase before resolving when missing', () => {
+            createNFTTrackerWorker.mockImplementation(pending);
+            workerSystem({ worker: true, workerBase: '/nft' })._maybeStart();
+            expect(createNFTTrackerWorker.mock.lastCall[1].workerBase).toBe(new URL('/nft/', document.baseURI).href);
+        });
+
         it('says nothing and compiles nothing when a Worker start fails after the scene was removed', async () => {
             const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
             const error = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -229,6 +235,23 @@ describe('arnft tracker start-up', () => {
             expect(createNFTTrackerWorker).toHaveBeenCalledTimes(2);
             expect(createNFTTrackerWorker.mock.lastCall[1].workerBase).toBe(new URL('/nft/', document.baseURI).href);
             expect(createNFTTracker).not.toHaveBeenCalled();
+        });
+
+        it('a restart after a Worker startup fallback stays on the same thread', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+            createNFTTrackerWorker.mockRejectedValueOnce(new Error('the worker failed to start'));
+            createNFTTracker.mockResolvedValueOnce({ dispose() {}, addNFTTargets: pending });
+            createNFTTracker.mockImplementationOnce(pending);
+            const s = workerSystem({ worker: true, workerBase: '/nft/' });
+            s._maybeStart();
+            await flush();
+
+            s._restartTracker();
+            await flush();
+
+            expect(createNFTTrackerWorker).toHaveBeenCalledTimes(1);
+            expect(createNFTTracker).toHaveBeenCalledTimes(2);
+            warn.mockRestore();
         });
     });
 });
