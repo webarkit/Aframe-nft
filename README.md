@@ -163,13 +163,9 @@ document.querySelector('a-scene').appendChild(nft);
 nft.remove();
 ```
 
-See [`examples/dynamic.html`](examples/dynamic.html) for a working page. Two caveats:
-
-- **Bring a target back by creating a new element.** A-Frame does not re-initialise
-  components when the *same* element is appended again, so a re-appended `<a-nft>` stays
-  hidden ([#15](https://github.com/webarkit/Aframe-nft/issues/15)).
-- **Removed targets stay loaded.** jsartoolkitNFT cannot unload a target. Adding a new
-  `<a-nft>` with the same `url` reuses the loaded one instead of loading it again.
+See [`examples/dynamic.html`](examples/dynamic.html) for a working page. Removed targets stay
+loaded in the tracker (jsartoolkitNFT cannot unload one), so adding an `<a-nft>` with the same
+`url` reuses the loaded target instead of loading it again.
 
 ### Tracking in a Web Worker
 
@@ -469,8 +465,6 @@ Bug reports and pull requests are welcome in the
 - **Runtime adds stall briefly on the same thread.** Adding an `<a-nft>` at runtime briefly stalls
   the page while the tracker builds the target's feature set. `worker: true` avoids that too. The
   downloads and the `.zft` check no longer block.
-- **Runtime `url` changes are ignored.** Changing `url` on an existing `<a-nft>` has no effect;
-  replace the element instead ([#15](https://github.com/webarkit/Aframe-nft/issues/15)).
 
 See the [open issues](https://github.com/webarkit/Aframe-nft/issues) for the full list.
 
