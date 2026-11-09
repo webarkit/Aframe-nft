@@ -54,8 +54,31 @@ describe('loadPendingMarkers', () => {
         tracker.requests[0].resolve(loaded(0));
         await flush();
         expect(a.id).toBe(0);
-        expect(registry.get(0)).toBe(a);
+        expect(registry.recordsFor(0)).toEqual([a]);
         expect(handlers.onLoaded).toHaveBeenCalledWith(a, size);
+    });
+
+    it('asks the tracker only once for two <a-nft> with the same url (#11)', async () => {
+        const { tracker, registry, markers: [first, second], handlers } = setup('a', 'a');
+        loadPendingMarkers(tracker, registry, handlers);
+        expect(tracker.requests).toHaveLength(1);
+        tracker.requests[0].resolve(loaded(0));
+        await flush();
+        expect(first.id).toBe(0);
+        expect(second.id).toBe(0);
+        expect(handlers.onLoaded).toHaveBeenCalledWith(first, size);
+        expect(handlers.onLoaded).toHaveBeenCalledWith(second, size);
+    });
+
+    it('reports a failed load to every <a-nft> waiting on that url (#11)', async () => {
+        const { tracker, registry, markers: [first, second], handlers } = setup('a', 'a');
+        loadPendingMarkers(tracker, registry, handlers);
+        tracker.requests[0].resolve([{ status: 'error', url: 'DataNFT/a', reason: 'network', message: '404' }]);
+        await flush();
+        expect(first.failed).toBe(true);
+        expect(second.failed).toBe(true);
+        expect(handlers.onFailed).toHaveBeenCalledWith(first, 'network: 404');
+        expect(handlers.onFailed).toHaveBeenCalledWith(second, 'network: 404');
     });
 
     it('loads a marker added after others are already loaded (#5)', async () => {

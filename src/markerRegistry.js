@@ -6,12 +6,13 @@
  *
  * 1. **Load state.** A marker may be registered before the tracker exists (the
  *    common case) or after it is already running (a dynamically added
- *    `<a-nft>`). Both must end up loaded exactly once.
- * 2. **Removal.** jsartoolkitNFT cannot unload a marker and holds at most 20.
- *    When an `<a-nft>` goes away, its tracker id is parked by url, with the
- *    target's size, and handed to the next `<a-nft>` added with the same url,
- *    instead of loading the target again. The size is kept because the tracker
- *    has no `getNFTData()`.
+ *    `<a-nft>`). Both must end up loaded.
+ * 2. **One target per url.** jsartoolkitNFT cannot unload a marker and holds at
+ *    most 20. Each descriptor url is loaded at most once per tracker: several
+ *    `<a-nft>` with the same url, or an `<a-nft>` removed and added again
+ *    (even while its load is still in flight), share that one loaded target
+ *    and its size (webarkit/Aframe-nft#11). The size is kept because the
+ *    tracker has no `getNFTData()`.
  *
  * Which targets are in view is the tracker's job: its `process()` results carry
  * debounced `lost` transitions (see `frames.js`).
@@ -48,7 +49,7 @@
  * @property {MarkerComponent} component The owning `nft-anchor` component.
  * @property {number|null} id Tracker id once loaded, else `null`.
  * @property {NFTData|null} data The target's size once loaded, else `null`.
- * @property {boolean} loading A load request is in flight.
+ * @property {boolean} loading A load request is in flight for this record's url.
  * @property {boolean} failed The load failed. The record is not retried.
  */
 
@@ -56,13 +57,24 @@ export class MarkerRegistry {
     constructor() {
         /** @type {MarkerRecord[]} Registered markers, in registration order. */
         this.markers = [];
-        /** @type {Map<number, MarkerRecord>} */
+        /**
+         * Live records for each loaded tracker id.
+         * @type {Map<number, Set<MarkerRecord>>}
+         */
         this._byId = new Map();
         /**
-         * Targets left loaded by removed markers, oldest first.
-         * @type {Map<string, {id: number, data: NFTData}[]>}
+         * Targets loaded on the current tracker, kept for its lifetime so any
+         * `<a-nft>` with the same url reuses the target instead of loading a copy.
+         * @type {Map<string, {id: number, data: NFTData}>}
          */
-        this._parked = new Map();
+        this._targets = new Map();
+        /**
+         * Urls currently being loaded, with the live records waiting on each.
+         * An entry stays until the load settles even if all waiting records are
+         * removed, so a record added in the meantime joins the in-flight load.
+         * @type {Map<string, Set<MarkerRecord>>}
+         */
+        this._inFlight = new Map();
         /**
          * Bumped when the load state starts over for a new tracker. A load that
          * started under an earlier generation has nothing left to report.
@@ -86,7 +98,8 @@ export class MarkerRegistry {
     resetLoadState() {
         this.generation++;
         this._byId.clear();
-        this._parked.clear();
+        this._targets.clear();
+        this._inFlight.clear();
         for (const marker of this.markers) {
             marker.id = null;
             marker.data = null;
@@ -96,8 +109,9 @@ export class MarkerRegistry {
     }
 
     /**
-     * Register a marker. If a removed marker left a loaded target for the same
-     * url, the record reuses it and comes back already loaded.
+     * Register a marker. If its url is already loaded on the current tracker,
+     * the record adopts that target and comes back already loaded; if a load for
+     * its url is in flight, it joins that load.
      *
      * @param {{name: string, url: string, component: MarkerComponent}} marker
      *     Mutated into, and returned as, the stored record.
@@ -110,13 +124,15 @@ export class MarkerRegistry {
         marker.failed = false;
         this.markers.push(marker);
 
-        const parked = this._parked.get(marker.url);
-        if (parked) {
-            const { id, data } = parked.shift();
-            this.setLoaded(marker, id, data);
-            if (parked.length === 0) {
-                this._parked.delete(marker.url);
-            }
+        const target = this._targets.get(marker.url);
+        if (target) {
+            this._attach(marker, target.id, target.data);
+            return marker;
+        }
+        const waiting = this._inFlight.get(marker.url);
+        if (waiting) {
+            marker.loading = true;
+            waiting.add(marker);
         }
         return marker;
     }
@@ -130,8 +146,9 @@ export class MarkerRegistry {
     }
 
     /**
-     * Unregister a marker: its poses are no longer routed. If it was loaded, its
-     * target is parked for reuse by url. Unknown records are ignored.
+     * Unregister a marker: its poses are no longer routed. The loaded target in
+     * `_targets` (or an in-flight load in `_inFlight`) stays for other or future
+     * `<a-nft>` with the same url. Unknown records are ignored.
      *
      * @param {MarkerRecord} marker
      */
@@ -141,9 +158,15 @@ export class MarkerRegistry {
             return;
         }
         this.markers.splice(index, 1);
+        this._inFlight.get(marker.url)?.delete(marker);
         if (marker.id !== null) {
-            this._byId.delete(marker.id);
-            this._park(marker.url, marker.id, marker.data);
+            const set = this._byId.get(marker.id);
+            if (set) {
+                set.delete(marker);
+                if (set.size === 0) {
+                    this._byId.delete(marker.id);
+                }
+            }
         }
     }
 
@@ -155,61 +178,103 @@ export class MarkerRegistry {
         return this.markers.filter((m) => m.id === null && !m.loading && !m.failed);
     }
 
-    /** @param {MarkerRecord} marker */
+    /**
+     * Mark a record as loading its url. If another record already started a load
+     * for the same url, this record joins it and `false` is returned so the
+     * caller does not start a second tracker load.
+     *
+     * @param {MarkerRecord} marker
+     * @returns {boolean} `true` when the caller must start the load for `marker.url`.
+     */
     markLoading(marker) {
         marker.loading = true;
+        let waiting = this._inFlight.get(marker.url);
+        if (waiting) {
+            waiting.add(marker);
+            return false;
+        }
+        waiting = new Set([marker]);
+        this._inFlight.set(marker.url, waiting);
+        return true;
     }
 
     /**
-     * Mark a load as failed. This is TERMINAL for the record: retrying the same
-     * url would only fail again. Re-adding the `<a-nft>` registers a fresh record.
+     * Mark the in-flight load for `url` as failed. This is TERMINAL for the
+     * records that were waiting on it: retrying the same url would only fail
+     * again. Re-adding an `<a-nft>` registers a fresh record, and `_inFlight`
+     * has been cleared so it will try anew.
      *
-     * @param {MarkerRecord} marker
+     * @param {string} url
+     * @returns {MarkerRecord[]} Live records that were waiting on `url`.
      */
-    markLoadFailed(marker) {
-        marker.loading = false;
-        marker.failed = true;
+    failLoad(url) {
+        const waiting = this._inFlight.get(url);
+        this._inFlight.delete(url);
+        if (!waiting) {
+            return [];
+        }
+        const failed = [];
+        for (const marker of waiting) {
+            marker.loading = false;
+            marker.failed = true;
+            if (this.has(marker)) {
+                failed.push(marker);
+            }
+        }
+        return failed;
     }
 
     /**
-     * Record the loaded target of a marker. If the marker was removed while it
-     * was loading, the target is parked instead, so a re-added `<a-nft>` with the
-     * same url reuses it.
+     * Record the loaded target for `url`. The target is kept in `_targets` even
+     * if every waiting `<a-nft>` was removed while it was loading, so a later
+     * `<a-nft>` with the same url reuses it.
      *
-     * @param {MarkerRecord} marker
+     * @param {string} url
      * @param {number} id Tracker id.
      * @param {NFTData} data The target's size.
-     * @returns {MarkerRecord|null} The record, or `null` if it was removed.
+     * @returns {MarkerRecord[]} Live records that were waiting on `url`.
      */
-    setLoaded(marker, id, data) {
-        marker.loading = false;
-        if (!this.has(marker)) {
-            this._park(marker.url, id, data);
-            return null;
+    finishLoad(url, id, data) {
+        this._targets.set(url, { id, data });
+        const waiting = this._inFlight.get(url);
+        this._inFlight.delete(url);
+        if (!waiting) {
+            return [];
         }
-        marker.id = id;
-        marker.data = data;
-        this._byId.set(id, marker);
-        return marker;
+        const loaded = [];
+        for (const marker of waiting) {
+            marker.loading = false;
+            if (this.has(marker)) {
+                this._attach(marker, id, data);
+                loaded.push(marker);
+            }
+        }
+        return loaded;
     }
 
     /**
-     * @param {string} url
+     * @param {MarkerRecord} marker
      * @param {number} id
      * @param {NFTData} data
      * @private
      */
-    _park(url, id, data) {
-        const targets = this._parked.get(url) || [];
-        targets.push({ id, data });
-        this._parked.set(url, targets);
+    _attach(marker, id, data) {
+        marker.id = id;
+        marker.data = data;
+        let set = this._byId.get(id);
+        if (!set) {
+            set = new Set();
+            this._byId.set(id, set);
+        }
+        set.add(marker);
     }
 
     /**
      * @param {number} id Tracker id.
-     * @returns {MarkerRecord|null}
+     * @returns {MarkerRecord[]} Live records tracking `id`.
      */
-    get(id) {
-        return this._byId.get(id) || null;
+    recordsFor(id) {
+        const set = this._byId.get(id);
+        return set ? Array.from(set) : [];
     }
 }

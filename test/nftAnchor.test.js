@@ -183,7 +183,8 @@ describe('nft-anchor visibility', () => {
     it('shows a re-added <a-nft> that adopts a target already tracked', () => {
         const arnft = Object.assign(Object.create(definitions.arnft), { registry: new MarkerRegistry() });
         const first = startedAnchor({}, arnft);
-        arnft.registry.setLoaded(first.marker, 0, size);
+        arnft.registry.markLoading(first.marker);
+        arnft.registry.finishLoad(first.marker.url, 0, size);
         first.onData(size);
         first.remove();
 

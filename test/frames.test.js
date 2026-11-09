@@ -26,8 +26,8 @@ describe('routeFrameResult', () => {
 
     beforeEach(() => {
         component = { onPose: vi.fn(), onLost: vi.fn() };
-        const records = new Map([[0, { component }]]);
-        registry = { get: (id) => records.get(id) ?? null };
+        const records = new Map([[0, [{ component }]]]);
+        registry = { recordsFor: (id) => records.get(id) ?? [] };
     });
 
     it('ignores a skipped frame', () => {
@@ -38,6 +38,21 @@ describe('routeFrameResult', () => {
     it('sends a pose and the frame time to its record', () => {
         routeFrameResult(registry, { time: 42, targets: [{ id: 0, found: true, pose }], transitions: [] });
         expect(component.onPose).toHaveBeenCalledWith(pose, 42);
+    });
+
+    it('routes one target to every record on it (#11)', () => {
+        const first = { onPose: vi.fn(), onLost: vi.fn() };
+        const second = { onPose: vi.fn(), onLost: vi.fn() };
+        const shared = { recordsFor: (id) => (id === 0 ? [{ component: first }, { component: second }] : []) };
+        routeFrameResult(shared, {
+            time: 1,
+            targets: [{ id: 0, found: true, pose }],
+            transitions: [{ type: 'lost', id: 0 }],
+        });
+        expect(first.onPose).toHaveBeenCalledWith(pose, 1);
+        expect(second.onPose).toHaveBeenCalledWith(pose, 1);
+        expect(first.onLost).toHaveBeenCalledTimes(1);
+        expect(second.onLost).toHaveBeenCalledTimes(1);
     });
 
     it('skips a target with no pose (the grace window before lost)', () => {
