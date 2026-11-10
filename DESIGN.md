@@ -205,8 +205,12 @@ Decisions made during Phase 2 (see also Decision Log):
     every loaded marker at once; the `continuousDetection` / `detectionInterval` system
     attributes expose its detection policy.
 
-  jsartoolkitNFT cannot unload a marker and holds at most 20, so a removed `<a-nft>` parks
-  its tracker id in `MarkerRegistry`, and re-adding the same `url` reuses it.
+  jsartoolkitNFT cannot unload a marker and holds at most 20, so `MarkerRegistry` loads each
+  distinct `url` at most once per tracker: two `<a-nft>` with the same `url`, a re-added `<a-nft>`
+  (even while its first load is still in flight), or a runtime `url` change all share that one
+  loaded target and its size (#11, #15), with each `<a-nft>` keeping its own 1€ filter. When the
+  same `<a-nft>` element is removed and appended again, A-Frame does not re-run `init()`, so
+  `nft-anchor` registers again on the entity's `loaded` event (#15).
 - ✅ **Tracker API (jsartoolkitNFT 1.16.0).** `createNFTTracker` replaces `ARControllerNFT`, which
   has no `dispose()` ([#780](https://github.com/webarkit/jsartoolkitNFT/issues/780)). Targets load
   through `addNFTTargets`, whose per-source results say why a load failed. `process()` returns the

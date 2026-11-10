@@ -4,7 +4,7 @@
  *
  * `addNFTTargets()` can be called at any time and as often as needed: ids stay
  * stable for the tracker's lifetime, and a failure stays local to its source.
- * One call per marker means a slow target does not delay the others, because a
+ * One call per url means a slow target does not delay the others, because a
  * call only answers once all of its sources have loaded.
  *
  * Kept free of A-Frame / THREE / DOM so it can be unit-tested with a fake
@@ -27,8 +27,8 @@
 const SLOW_LOAD_MS = 30000;
 
 /**
- * Request every registered marker that is not loaded or loading yet, one
- * `addNFTTargets()` call per marker.
+ * Request every registered marker that is not loaded or loading yet, at most
+ * one `addNFTTargets()` call per distinct url.
  *
  * @param {NFTTracker} tracker The tracker.
  * @param {MarkerRegistry} registry Source of the markers to load; updated as loads finish.
@@ -48,7 +48,8 @@ export function loadPendingMarkers(tracker, registry, { onLoaded, onFailed, onTr
 }
 
 /**
- * Load a single marker and route the outcome to the registry and handlers.
+ * Load a marker's url (if not already in flight) and route the outcome to the
+ * registry and handlers for every record waiting on that url.
  *
  * @param {NFTTracker} tracker
  * @param {MarkerRegistry} registry
@@ -59,8 +60,11 @@ export function loadPendingMarkers(tracker, registry, { onLoaded, onFailed, onTr
  * @private
  */
 function loadMarker(tracker, registry, marker, onLoaded, onFailed, onTrackerFailed) {
-    registry.markLoading(marker);
+    if (!registry.markLoading(marker)) {
+        return;
+    }
 
+    const url = marker.url;
     // After resetLoadState the tracker behind this load is gone, and the marker may
     // already be loading again on the next one: this load has nothing left to say.
     const generation = registry.generation;
@@ -70,10 +74,9 @@ function loadMarker(tracker, registry, marker, onLoaded, onFailed, onTrackerFail
         if (isStale()) {
             return;
         }
-        registry.markLoadFailed(marker);
-        // No message for an <a-nft> that is already gone.
-        if (registry.has(marker)) {
-            onFailed(marker, reason);
+        // failLoad returns only the waiting records that are still registered.
+        for (const record of registry.failLoad(url)) {
+            onFailed(record, reason);
         }
     };
 
@@ -81,7 +84,7 @@ function loadMarker(tracker, registry, marker, onLoaded, onFailed, onTrackerFail
         if (isStale()) {
             return;
         }
-        registry.markLoadFailed(marker);
+        registry.failLoad(url);
         onTrackerFailed(err);
     };
 
@@ -95,27 +98,34 @@ function loadMarker(tracker, registry, marker, onLoaded, onFailed, onTrackerFail
         }
         const { id, widthPx, heightPx, dpi } = load.info;
         const data = { width: widthPx, height: heightPx, dpi };
-        // null when the <a-nft> was removed while loading: the registry keeps
-        // the target for reuse, and there is no component left to notify.
-        if (registry.setLoaded(marker, id, data)) {
-            onLoaded(marker, data);
+        // finishLoad keeps the target in the registry even when all waiting
+        // <a-nft> were removed, and returns the ones still registered.
+        for (const record of registry.finishLoad(url, id, data)) {
+            try {
+                onLoaded(record, data);
+            } catch (err) {
+                // onRejected only sees a call that failed. A throw from onLoaded is a
+                // separate problem: the target did load and is tracked.
+                console.error(`arnft: NFT marker "${record.name}" loaded, but its <a-nft> could not use it`, err);
+            }
         }
     };
 
     const slowLoad = setTimeout(() => {
-        if (!isStale() && registry.has(marker)) {
+        if (isStale()) {
+            return;
+        }
+        const waiting = registry.markers.find((m) => m.url === url && m.loading);
+        if (waiting) {
             console.warn(
-                `arnft: NFT marker "${marker.name}" (${marker.url}) has not loaded after ` +
+                `arnft: NFT marker "${waiting.name}" (${url}) has not loaded after ` +
                     `${SLOW_LOAD_MS / 1000} s; still waiting for the server`,
             );
         }
     }, SLOW_LOAD_MS);
 
-    // onRejected only sees a call that failed. A throw from onLoaded is a separate
-    // problem: the target did load and is tracked.
     tracker
-        .addNFTTargets([marker.url], { origin: 'corner' })
+        .addNFTTargets([url], { origin: 'corner' })
         .then(onResult, onRejected)
-        .catch((err) => console.error(`arnft: NFT marker "${marker.name}" loaded, but its <a-nft> could not use it`, err))
         .finally(() => clearTimeout(slowLoad));
 }

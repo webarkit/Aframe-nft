@@ -75,10 +75,26 @@ const smoothing = { smooth: true, smoothMinCutoff: 0.0001, smoothBeta: 0.01, smo
 // starts the way A-Frame's does: visible, with its matrix built from its own
 // position, rotation and scale. A-Frame's Component gives every component a
 // play() and a pause(), which a definition may replace.
-function createdAnchor(data = {}, arnft = { registerMarker: () => ({}) }) {
+function createdAnchor(
+    data = {},
+    arnft = {
+        registerMarker: vi.fn((record) => record),
+        unregisterMarker: vi.fn(),
+    },
+) {
+    const listeners = {};
     const definition = { play() {}, pause() {}, ...definitions['nft-anchor'] };
     const anchor = Object.assign(Object.create(definition), {
         el: {
+            addEventListener(type, fn) {
+                (listeners[type] ??= []).push(fn);
+            },
+            emit(type) {
+                for (const fn of listeners[type] ?? []) {
+                    fn();
+                }
+            },
+            components: {},
             object3D: {
                 visible: true,
                 matrixAutoUpdate: true,
@@ -89,6 +105,7 @@ function createdAnchor(data = {}, arnft = { registerMarker: () => ({}) }) {
         },
         data: { entityName: 'kuva', markerUrl: 'DataNFT/kuva', scaleFactor: 150, ...smoothing, ...data },
     });
+    anchor.el.components['nft-anchor'] = anchor;
     anchor.init();
     anchor.update({});
     return anchor;
@@ -166,7 +183,8 @@ describe('nft-anchor visibility', () => {
     it('shows a re-added <a-nft> that adopts a target already tracked', () => {
         const arnft = Object.assign(Object.create(definitions.arnft), { registry: new MarkerRegistry() });
         const first = startedAnchor({}, arnft);
-        arnft.registry.setLoaded(first.marker, 0, size);
+        arnft.registry.markLoading(first.marker);
+        arnft.registry.finishLoad(first.marker.url, 0, size);
         first.onData(size);
         first.remove();
 
@@ -309,3 +327,57 @@ describe('nft-anchor smoothing filter', () => {
         expect(anchor.filter).toBeNull();
     });
 });
+
+describe('nft-anchor markerUrl change and re-append (#15)', () => {
+    const pose = Float64Array.from({ length: 16 }, (_, i) => i + 1);
+    const size = { width: 893, height: 1117, dpi: 120 };
+
+    it('registers the new target when markerUrl changes (#15)', () => {
+        const anchor = startedAnchor();
+        const { arnft } = anchor.el.sceneEl.systems;
+        anchor.onData(size);
+        anchor.onPose(pose, 1);
+        const old = anchor.marker;
+        const oldData = { ...anchor.data };
+        anchor.data.markerUrl = 'DataNFT/other';
+        anchor.update(oldData);
+        expect(arnft.unregisterMarker).toHaveBeenCalledWith(old);
+        expect(arnft.registerMarker.mock.lastCall[0].url).toBe('DataNFT/other');
+        expect(anchor.mesh.visible).toBe(false);
+        expect(anchor.markerData).toBeNull();
+    });
+
+    it('registers again on loaded after a re-append (#15)', () => {
+        const anchor = startedAnchor();
+        anchor.remove();
+        anchor.el.emit('loaded');
+        expect(anchor.marker).not.toBeNull();
+    });
+
+    it('does not register a second time on the initial loaded event', () => {
+        const anchor = startedAnchor();
+        const { arnft } = anchor.el.sceneEl.systems;
+        anchor.el.emit('loaded');
+        expect(arnft.registerMarker).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not register again once nft-anchor was removed for good', () => {
+        const anchor = startedAnchor();
+        anchor.remove();
+        anchor.el.components['nft-anchor'] = undefined;
+        anchor.el.emit('loaded');
+        expect(anchor.marker).toBeNull();
+    });
+
+    it('attaches a single loaded listener on the entity and looks up the current component instance', () => {
+        const anchor1 = startedAnchor();
+        const addListenerSpy = vi.spyOn(anchor1.el, 'addEventListener');
+        const anchor2 = createdAnchor({}, anchor1.el.sceneEl.systems.arnft);
+        anchor1.el.components['nft-anchor'] = anchor2;
+        // Re-run init on anchor2 with anchor1.el
+        anchor2.el = anchor1.el;
+        anchor2.init();
+        expect(addListenerSpy).not.toHaveBeenCalled();
+    });
+});
+

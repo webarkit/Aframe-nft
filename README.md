@@ -163,13 +163,10 @@ document.querySelector('a-scene').appendChild(nft);
 nft.remove();
 ```
 
-See [`examples/dynamic.html`](examples/dynamic.html) for a working page. Two caveats:
-
-- **Bring a target back by creating a new element.** A-Frame does not re-initialise
-  components when the *same* element is appended again, so a re-appended `<a-nft>` stays
-  hidden ([#15](https://github.com/webarkit/Aframe-nft/issues/15)).
-- **Removed targets stay loaded.** jsartoolkitNFT cannot unload a target. Adding a new
-  `<a-nft>` with the same `url` reuses the loaded one instead of loading it again.
+See [`examples/dynamic.html`](examples/dynamic.html) for a working page. Each target `url` is
+loaded at most once per scene: adding another `<a-nft>` with the same `url`, re-appending a
+removed `<a-nft>`, or changing `url` at runtime reuses an already loaded (or in-flight) target
+instead of loading it again, because jsartoolkitNFT cannot unload a target.
 
 ### Tracking in a Web Worker
 
@@ -398,9 +395,10 @@ flowchart LR
 2. **Tracker.** Once the camera is live and at least one `<a-nft>` exists, the system creates
    a single tracker with `createNFTTracker` and applies its projection to the A-Frame camera.
    There is one tracker per scene, not one per target.
-3. **Targets.** Each `<a-nft>` registers with the system. `markerLoader` loads its descriptor
-   set with one call per target, so a bad `url` only affects its own `<a-nft>`.
-   `MarkerRegistry` tracks load state and reusable ids.
+3. **Targets.** Each `<a-nft>` registers with the system. `markerLoader` loads each distinct
+   descriptor `url` once, with one call per target, so a bad `url` only affects the `<a-nft>`
+   elements using it. `MarkerRegistry` tracks load state and shares loaded targets across
+   `<a-nft>` elements with the same `url`.
 4. **Each new frame.** `process()` detects and tracks every loaded target. It is skipped when no
    target is loaded, or when there is no new frame yet. Each pose is routed to its `nft-anchor`,
    which:
@@ -420,7 +418,7 @@ flowchart LR
 | [`src/index.js`](src/index.js) | Entry point: importing it registers everything, logs the version banner and exports `version` |
 | [`src/registerNFT.js`](src/registerNFT.js) | A-Frame glue: the `arnft` system, the `nft-anchor` component, the `<a-nft>` primitive |
 | [`src/cameraConstraints.js`](src/cameraConstraints.js) | Keeps `videoWidth` / `videoHeight` as ideal capture sizes with `CameraView` |
-| [`src/markerRegistry.js`](src/markerRegistry.js) | Target bookkeeping: load state, reusable ids |
+| [`src/markerRegistry.js`](src/markerRegistry.js) | Target bookkeeping: one load per `url`, shared target ids |
 | [`src/markerLoader.js`](src/markerLoader.js) | Loads descriptor sets into the tracker |
 | [`src/frames.js`](src/frames.js) | Picks the next frame to process, and routes each `process()` result to the `<a-nft>` components |
 | [`src/trackerSettings.js`](src/trackerSettings.js) | Turns `arnft` attributes into tracker settings |
@@ -469,8 +467,6 @@ Bug reports and pull requests are welcome in the
 - **Runtime adds stall briefly on the same thread.** Adding an `<a-nft>` at runtime briefly stalls
   the page while the tracker builds the target's feature set. `worker: true` avoids that too. The
   downloads and the `.zft` check no longer block.
-- **Runtime `url` changes are ignored.** Changing `url` on an existing `<a-nft>` has no effect;
-  replace the element instead ([#15](https://github.com/webarkit/Aframe-nft/issues/15)).
 
 See the [open issues](https://github.com/webarkit/Aframe-nft/issues) for the full list.
 

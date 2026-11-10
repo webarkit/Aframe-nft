@@ -706,6 +706,29 @@ AFRAME.registerComponent('nft-anchor', {
         // Built by the first update(), which A-Frame runs right after init().
         this.filter = null;
 
+        this._register();
+        // A-Frame does not re-run init() when the same <a-nft> element is appended
+        // again after remove(), because the component stays in el.components. It does
+        // fire loaded on the entity again (webarkit/Aframe-nft#15).
+        // Keep a single listener per entity looking up its current component instance
+        // so repeated component replacements do not leak listeners or retain old instances.
+        if (!this.el._nftAnchorLoadedListener) {
+            this.el._nftAnchorLoadedListener = () => {
+                const comp = this.el.components?.['nft-anchor'];
+                if (comp && comp.marker === null) {
+                    comp._register();
+                }
+            };
+            this.el.addEventListener('loaded', this.el._nftAnchorLoadedListener);
+        }
+    },
+
+    /**
+     * Register this anchor's current target with the `arnft` system.
+     *
+     * @private
+     */
+    _register: function () {
         this.marker = this.el.sceneEl.systems.arnft.registerMarker({
             name: this.data.entityName,
             url: this.data.markerUrl,
@@ -727,10 +750,6 @@ AFRAME.registerComponent('nft-anchor', {
      * The entity was removed or detached, or `nft-anchor` was removed from it:
      * stop routing poses to it. No pose and no `onLost` will arrive after this,
      * so the mesh is hidden now rather than left frozen at its last pose.
-     *
-     * A-Frame does not re-run `init()` when the same element is appended again,
-     * so a removed `<a-nft>` is not tracked again; create a new element instead
-     * (webarkit/Aframe-nft#15).
      */
     remove: function () {
         this.el.sceneEl.systems.arnft.unregisterMarker(this.marker);
@@ -740,8 +759,8 @@ AFRAME.registerComponent('nft-anchor', {
 
     /**
      * Apply property changes: the first call after `init()`, then any runtime
-     * change of `scaleFactor`, `lift`, the offsets or the smoothing parameters.
-     * A change of `markerUrl` is not handled (webarkit/Aframe-nft#15).
+     * change of `markerUrl`, `scaleFactor`, `lift`, the offsets or the smoothing
+     * parameters.
      *
      * The filter is rebuilt only when its own properties change, because
      * rebuilding resets the smoothing state.
@@ -756,6 +775,13 @@ AFRAME.registerComponent('nft-anchor', {
             this.data.smoothRotationBeta !== oldData.smoothRotationBeta
         ) {
             this._buildFilter();
+        }
+        if (oldData.markerUrl !== undefined && oldData.markerUrl !== this.data.markerUrl && this.marker !== null) {
+            this.el.sceneEl.systems.arnft.unregisterMarker(this.marker);
+            this.marker = null;
+            this.markerData = null;
+            this.onLost();
+            this._register();
         }
         if (this.markerData) {
             this._composePostMatrix();

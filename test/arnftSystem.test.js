@@ -269,7 +269,9 @@ describe('arnft per-frame work', () => {
             })),
         };
         const s = system({ tracker, videoReady: true, view: capturingView(image) });
-        s.registry.setLoaded(s.registry.add({ name: 'a', url: 'a', component }), 0, size);
+        const a = s.registry.add({ name: 'a', url: 'a', component });
+        s.registry.markLoading(a);
+        s.registry.finishLoad(a.url, 0, size);
 
         s.tick();
 
@@ -296,7 +298,9 @@ describe('arnft per-frame work', () => {
         const tracker = { process: vi.fn() };
         const view = { frame: 3, getImage: vi.fn(() => 'copy of the last frame') };
         const s = system({ tracker, videoReady: true, view });
-        s.registry.setLoaded(s.registry.add({ name: 'a', url: 'a', component: {} }), 0, size);
+        const a = s.registry.add({ name: 'a', url: 'a', component: {} });
+        s.registry.markLoading(a);
+        s.registry.finishLoad(a.url, 0, size);
         s.tick();
         expect(view.getImage).toHaveBeenCalledTimes(1);
         expect(tracker.process).not.toHaveBeenCalled();
@@ -313,7 +317,9 @@ describe('arnft per-frame work', () => {
             }),
         };
         const s = system({ tracker, videoReady: true, view: capturingView() });
-        s.registry.setLoaded(s.registry.add({ name: 'a', url: 'a', component: { onLost } }), 0, size);
+        const a = s.registry.add({ name: 'a', url: 'a', component: { onLost } });
+        s.registry.markLoading(a);
+        s.registry.finishLoad(a.url, 0, size);
 
         expect(() => s.tick()).not.toThrow();
         s.tick();
@@ -332,7 +338,9 @@ describe('arnft per-frame work', () => {
         const tracker = { process: vi.fn(() => ({ time: 1, targets: [{ id: 0, found: true, pose }], transitions: [] })) };
         const view = capturingView();
         const s = system({ tracker, videoReady: true, view });
-        s.registry.setLoaded(s.registry.add({ name: 'a', url: 'a', component: { onPose } }), 0, size);
+        const a = s.registry.add({ name: 'a', url: 'a', component: { onPose } });
+        s.registry.markLoading(a);
+        s.registry.finishLoad(a.url, 0, size);
 
         s.tick();
         expect(onPose).toHaveBeenCalledTimes(1);
@@ -360,7 +368,9 @@ describe('arnft per-frame work', () => {
             const tracker = workerTracker();
             const view = capturingView();
             const s = system({ tracker, videoReady: true, view });
-            s.registry.setLoaded(s.registry.add({ name: 'a', url: 'a', component: { onPose, onLost } }), 0, size);
+            const a = s.registry.add({ name: 'a', url: 'a', component: { onPose, onLost } });
+            s.registry.markLoading(a);
+            s.registry.finishLoad(a.url, 0, size);
             return { s, view, tracker, onPose, onLost };
         };
 
@@ -490,7 +500,8 @@ describe('arnft per-frame work', () => {
 
             const fresh = workerTracker();
             s.tracker = fresh;
-            s.registry.setLoaded(s.registry.markers[0], 0, size);
+            s.registry.markLoading(s.registry.markers[0]);
+            s.registry.finishLoad(s.registry.markers[0].url, 0, size);
             s.tick();
             expect(fresh.process).toHaveBeenCalledTimes(1);
 
@@ -507,7 +518,9 @@ describe('arnft camera changes', () => {
     const loadedSystem = (overrides = {}) => {
         const onLost = vi.fn();
         const s = system(overrides);
-        s.registry.setLoaded(s.registry.add({ name: 'a', url: 'a', component: { onLost } }), 0, size);
+        const a = s.registry.add({ name: 'a', url: 'a', component: { onLost } });
+        s.registry.markLoading(a);
+        s.registry.finishLoad(a.url, 0, size);
         return { s, onLost };
     };
 
@@ -982,7 +995,10 @@ describe('arnft teardown when the scene is removed (#16)', () => {
 describe('arnft registerMarker', () => {
     it('hands a re-added <a-nft> the size kept from its first load', () => {
         const s = system({ tracker: {}, _loadPendingMarkers: vi.fn() });
-        s.unregisterMarker(s.registry.setLoaded(s.registry.add({ name: 'a', url: new URL('a', document.baseURI).href, component: {} }), 0, size));
+        const first = s.registry.add({ name: 'a', url: new URL('a', document.baseURI).href, component: {} });
+        s.registry.markLoading(first);
+        s.registry.finishLoad(first.url, 0, size);
+        s.unregisterMarker(first);
 
         const onData = vi.fn();
         s.registerMarker({ name: 'a', url: 'a', component: { onData } });
