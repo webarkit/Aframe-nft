@@ -32,7 +32,7 @@ This document provides instructions for AI coding assistants (Antigravity, Claud
 ## 2. Project Architecture & Technologies
 
 - **Project Purpose:**
-  `Aframe-nft` is a WebXR/WebAR component library for A-Frame enabling markerless Natural Feature Tracking (NFT) image targets powered by `jsartoolkitNFT`.
+  `Aframe-nft` is a WebAR component library for A-Frame enabling markerless Natural Feature Tracking (NFT) image targets powered by `jsartoolkitNFT`.
 - **Core Tech Stack:**
   - [A-Frame](https://aframe.io/) (`1.8.0`)
   - [`@webarkit/jsartoolkit-nft`](https://github.com/webarkit/jsartoolkitNFT) (`1.16.0`)

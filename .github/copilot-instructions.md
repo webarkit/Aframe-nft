@@ -4,7 +4,7 @@ You are an expert AI pair programmer helping develop `webarkit/Aframe-nft`.
 
 ## Project Overview
 
-`Aframe-nft` is a WebXR component library for [A-Frame](https://aframe.io/) (`1.8.0`) that brings Natural Feature Tracking (NFT) markerless AR to the web using [`@webarkit/jsartoolkit-nft`](https://github.com/webarkit/jsartoolkitNFT) (`1.16.0`) and [`@webarkit/camera-view`](https://github.com/webarkit/camera-view) (`0.1.0`).
+`Aframe-nft` is a WebAR component library for [A-Frame](https://aframe.io/) (`1.8.0`) that brings Natural Feature Tracking (NFT) markerless AR to the web using [`@webarkit/jsartoolkit-nft`](https://github.com/webarkit/jsartoolkitNFT) (`1.16.0`) and [`@webarkit/camera-view`](https://github.com/webarkit/camera-view) (`0.1.0`).
 
 ## Git & Contribution Rules
 
