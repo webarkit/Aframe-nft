@@ -37,7 +37,7 @@ This document provides instructions for AI coding assistants (Antigravity, Claud
   - [A-Frame](https://aframe.io/) (`1.8.0`)
   - [`@webarkit/jsartoolkit-nft`](https://github.com/webarkit/jsartoolkitNFT) (`1.16.0`)
   - [`@webarkit/camera-view`](https://github.com/webarkit/camera-view) (`0.1.0`)
-  - [`@webarkit/oneeurofilter-ts`](https://github.com/webarkit/OneEuroFilter-ts) (`0.2.0`)
+  - [`@webarkit/oneeurofilter-ts`](https://github.com/webarkit/OneEuroFilter-ts) (`0.3.0`)
   - Vite (`8.x`), Vitest (`5.x`) + `jsdom`
 - **Key Modules (`src/`):**
   - [`src/registerNFT.js`](src/registerNFT.js): A-Frame glue: `arnft` system, `nft-anchor` component, and `<a-nft>` primitive.
@@ -70,11 +70,12 @@ This document provides instructions for AI coding assistants (Antigravity, Claud
     npm run build
     ```
 - **Windows CRLF / Git Status Guard:**
-  - On Windows, `dist/NFTTracker*.js` files may appear modified in `git status` due to line ending differences, even when `git diff` shows no real changes.
-  - Never commit spurious line-ending diffs. Restore unchanged worker files before committing:
+  - On Windows checkouts with `core.autocrlf`, `dist/NFTTracker*.js` files may appear modified in `git status` due to CRLF/LF line ending differences even when there are no real content changes.
+  - Verify with `git diff --ignore-space-at-eol -- dist/NFTTracker*.js`. If the diff shows no real content change, restore them before committing:
     ```bash
     git checkout -- dist/NFTTracker*.js
     ```
+  - If a dependency update or build produces genuine code changes in worker files, keep and commit them.
 - **Examples & Routing:**
   - Examples reside under [`examples/`](examples/). Keep the index at [`examples/index.html`](examples/index.html).
   - Do NOT create a root `index.html` (it would cause Vite to return 200 on missing assets/descriptors instead of 404).
