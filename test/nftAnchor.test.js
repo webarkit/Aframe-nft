@@ -368,5 +368,16 @@ describe('nft-anchor markerUrl change and re-append (#15)', () => {
         anchor.el.emit('loaded');
         expect(anchor.marker).toBeNull();
     });
+
+    it('attaches a single loaded listener on the entity and looks up the current component instance', () => {
+        const anchor1 = startedAnchor();
+        const addListenerSpy = vi.spyOn(anchor1.el, 'addEventListener');
+        const anchor2 = createdAnchor({}, anchor1.el.sceneEl.systems.arnft);
+        anchor1.el.components['nft-anchor'] = anchor2;
+        // Re-run init on anchor2 with anchor1.el
+        anchor2.el = anchor1.el;
+        anchor2.init();
+        expect(addListenerSpy).not.toHaveBeenCalled();
+    });
 });
 

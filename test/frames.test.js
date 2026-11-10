@@ -55,6 +55,46 @@ describe('routeFrameResult', () => {
         expect(second.onLost).toHaveBeenCalledTimes(1);
     });
 
+    it('does not invoke onPose or onLost on a record removed during the same frame fan-out', () => {
+        let shared;
+        const first = {
+            onPose: vi.fn(() => {
+                shared.remove(secondRecord);
+            }),
+            onLost: vi.fn(() => {
+                shared.remove(secondRecord);
+            }),
+        };
+        const second = { onPose: vi.fn(), onLost: vi.fn() };
+        const firstRecord = { component: first };
+        const secondRecord = { component: second };
+        const live = new Set([firstRecord, secondRecord]);
+        shared = {
+            recordsFor: (id) => (id === 0 ? [firstRecord, secondRecord] : []),
+            has: (record) => live.has(record),
+            remove: (record) => live.delete(record),
+        };
+        routeFrameResult(shared, {
+            time: 1,
+            targets: [{ id: 0, found: true, pose }],
+            transitions: [],
+        });
+        expect(first.onPose).toHaveBeenCalledWith(pose, 1);
+        expect(second.onPose).not.toHaveBeenCalled();
+
+        // Also test the lost transition fan-out
+        first.onPose.mockReset();
+        second.onPose.mockReset();
+        live.add(secondRecord);
+        routeFrameResult(shared, {
+            time: 2,
+            targets: [],
+            transitions: [{ type: 'lost', id: 0 }],
+        });
+        expect(first.onLost).toHaveBeenCalledTimes(1);
+        expect(second.onLost).not.toHaveBeenCalled();
+    });
+
     it('skips a target with no pose (the grace window before lost)', () => {
         routeFrameResult(registry, { time: 42, targets: [{ id: 0, found: false, pose: null }], transitions: [] });
         expect(component.onPose).not.toHaveBeenCalled();

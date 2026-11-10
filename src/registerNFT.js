@@ -710,11 +710,17 @@ AFRAME.registerComponent('nft-anchor', {
         // A-Frame does not re-run init() when the same <a-nft> element is appended
         // again after remove(), because the component stays in el.components. It does
         // fire loaded on the entity again (webarkit/Aframe-nft#15).
-        this.el.addEventListener('loaded', () => {
-            if (this.marker === null && this.el.components['nft-anchor'] === this) {
-                this._register();
-            }
-        });
+        // Keep a single listener per entity looking up its current component instance
+        // so repeated component replacements do not leak listeners or retain old instances.
+        if (!this.el._nftAnchorLoadedListener) {
+            this.el._nftAnchorLoadedListener = () => {
+                const comp = this.el.components?.['nft-anchor'];
+                if (comp && comp.marker === null) {
+                    comp._register();
+                }
+            };
+            this.el.addEventListener('loaded', this.el._nftAnchorLoadedListener);
+        }
     },
 
     /**

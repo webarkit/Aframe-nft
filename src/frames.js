@@ -48,14 +48,18 @@ export function routeFrameResult(registry, result) {
     for (const target of result.targets) {
         if (target.pose) {
             for (const record of registry.recordsFor(target.id)) {
-                record.component.onPose(target.pose, result.time);
+                if (!registry.has || registry.has(record)) {
+                    record.component.onPose(target.pose, result.time);
+                }
             }
         }
     }
     for (const transition of result.transitions) {
         if (transition.type === 'lost') {
             for (const record of registry.recordsFor(transition.id)) {
-                record.component.onLost();
+                if (!registry.has || registry.has(record)) {
+                    record.component.onLost();
+                }
             }
         }
     }
