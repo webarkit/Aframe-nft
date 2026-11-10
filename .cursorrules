@@ -1,0 +1,10 @@
+# Cursor Rules for Aframe-nft
+# See AGENTS.md for full agent guidelines.
+
+- Branching: Always branch from `origin/dev` (`git checkout -b <name> origin/dev`). Never commit to `main` or `dev`.
+- Pull Requests: Always target `dev`.
+- Commits: Use Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`). Sign all commits with GPG.
+- Testing: Run `npm test -- --run` before committing.
+- Build: Always run `npm run build` whenever modifying `src/` because `dist/AframeNft.js` is committed in git.
+- Windows line endings: Avoid committing modified `dist/NFTTracker*.js` if diff is only CRLF/LF line endings (`git checkout -- dist/NFTTracker*.js`).
+- Invariant: Exactly one tracker per `<a-scene>`. Targets with identical URLs share one loaded tracker ID in `src/markerRegistry.js`.
