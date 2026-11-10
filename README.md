@@ -21,9 +21,9 @@ follows the printed image in the camera view.
 ```
 
 > **Status:** early (0.x; see the [changelog](CHANGELOG.md)). The `<a-nft>` API is small and
-> stable in spirit, but may still change before 1.0. An npm package is coming soon; until
-> then, use the bundle from this repository (see
-> [Using it in your page](#using-it-in-your-page-)).
+> stable in spirit, but may still change before 1.0. Available as an npm package
+> [`@webarkit/aframe-nft`](https://www.npmjs.com/package/@webarkit/aframe-nft) or as a standalone
+> bundle (see [Using it in your page](#using-it-in-your-page-)).
 
 ## Contents
 
@@ -79,10 +79,15 @@ on a screen.
 
 ## Using it in your page 📝
 
-**Get the bundle.** Until the npm package is published, which is planned soon, build
-`dist/AframeNft.js` with `npm run build` or copy the one committed in this repository. It is a
-single script that **already contains A-Frame (1.8.0) and jsartoolkitNFT**, so do not load
-A-Frame separately.
+**Install or get the bundle:**
+
+```bash
+npm install @webarkit/aframe-nft
+```
+
+Alternatively, build `dist/AframeNft.js` with `npm run build` or use the bundle committed in this
+repository. It is a single script that **already contains A-Frame (1.8.0) and jsartoolkitNFT**,
+so do not load A-Frame separately.
 
 A page needs four things:
 
@@ -302,7 +307,7 @@ The content is centred on the target automatically, using the target's real-worl
 At start-up the bundle logs its version, right after A-Frame's own lines:
 
 ```
-Aframe-nft 0.2.0 (jsartoolkitNFT 1.16.0)
+Aframe-nft 0.3.0 (jsartoolkitNFT 1.16.0)
 ```
 
 The same version is available from code as `AframeNft.version`.
