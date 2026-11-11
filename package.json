@@ -1,8 +1,16 @@
 {
-  "name": "aframe-nft",
-  "version": "0.2.0",
+  "name": "@webarkit/aframe-nft",
+  "version": "0.3.0",
   "description": "A-Frame NFT (Natural Feature Tracking) AR components powered by jsartoolkitNFT",
   "main": "dist/AframeNft.js",
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "scripts": {
     "test": "vitest run",
