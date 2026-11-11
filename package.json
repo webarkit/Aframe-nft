@@ -3,11 +3,6 @@
   "version": "0.3.0",
   "description": "A-Frame NFT (Natural Feature Tracking) AR components powered by jsartoolkitNFT",
   "main": "dist/AframeNft.js",
-  "module": "dist/AframeNft.js",
-  "exports": {
-    ".": "./dist/AframeNft.js",
-    "./dist/*": "./dist/*"
-  },
   "files": [
     "dist",
     "src",

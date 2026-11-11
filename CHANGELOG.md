@@ -14,7 +14,7 @@ This release upgrades jsartoolkitNFT to 1.16.0, moves camera handling to `@webar
 - **Worker tracking opt-in.** Setting `worker: true` on `<a-scene arnft>` runs tracking off the main thread in a Web Worker via `createNFTTrackerWorker`, falling back to main-thread tracking if workers are unsupported or blocked ([#7], [#28]). See `examples/worker.html`.
 - **`workerBase` attribute.** Optional base path for worker and wasm assets when worker tracking is enabled ([#28]).
 - **Rigid 3D pose smoothing with SO(3).** Rotation smoothing uses Lie group geodesics and quaternions, preventing non-rigid deformation during rapid orientation changes ([#24], [#27]).
-- **Separate rotation smoothing parameters.** Added `smoothRotationCutoff` and `smoothRotationBeta` on `nft-anchor`, allowing rotation responsiveness to be tuned independently from translation ([#27]).
+- **Separate rotation smoothing beta.** Added `smoothRotationBeta` on `nft-anchor`, allowing rotation responsiveness to be tuned independently from translation speed ([#27]).
 - **CameraView integration & frame rate throttling.** Camera stream handling is now powered by `@webarkit/camera-view` 0.1.0, with automatic video frame rate detection and frame gating via `requestVideoFrameCallback` to avoid redundant tracking calls on duplicate frames ([#12], [#16], [#25]).
 - **Clean tracking shutdown.** Stopping or removing an `<a-scene arnft>` properly closes the camera and halts the tracker processing loop ([#25]).
 - **Agent instructions.** Added comprehensive coding guidelines for AI assistants (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, Copilot, and Cursor) ([#30]).
