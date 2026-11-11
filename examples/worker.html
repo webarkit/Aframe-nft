@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Aframe-nft Worker example</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=0.5, maximum-scale=1"/>
+    <link rel="stylesheet" href="css/nft-style.css"/>
+</head>
+<body>
+<div id="app">
+    <video autoplay muted playsinline id="video"></video>
+</div>
+<script type="module" src="../src/index.js"></script>
+<div class="example-container">
+    <!-- worker: true tracks in a Web Worker. This page loads its script as a module,
+         so it must also say where the Worker files are: workerBase. With the bundle
+         in a plain <script>, they are found next to it. See the README. -->
+    <a-scene embedded arnft="videoWidth: 640; videoHeight: 480; worker: true; workerBase: ../dist/">
+
+        <a-nft name="pinball" url="DataNFT/pinball">
+            <a-box color="#4CC3D9"></a-box>
+        </a-nft>
+
+        <a-nft name="kuva" url="DataNFT/kuva">
+            <a-sphere color="#E4572E"></a-sphere>
+        </a-nft>
+
+        <!-- Not <a-camera>: on some phones its look-controls stops a page like this,
+             which loads its script as a module, from starting. See the README. -->
+        <a-entity camera position="0 0 0"></a-entity>
+
+    </a-scene>
+</div>
+</body>
+</html>

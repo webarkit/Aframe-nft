@@ -1,7 +1,8 @@
 # Aframe-nft — Design & Improvement Plan
 
 > Status: **Implemented.** Phase 2 (jsartoolkitNFT + Vite) is the current codebase; multi-target
-> tracking and runtime-added targets followed with jsartoolkitNFT 1.13.0 (section 10).
+> tracking and runtime-added targets followed with jsartoolkitNFT 1.13.0, and the tracker API with
+> 1.16.0 (section 10).
 > This document keeps the design history and the reasons behind the decisions. Sections 1–9
 > describe the plan as written on 2026-07-01, so parts of them (for example "single marker
 > per scene") have since been superseded. For how to *use* the library, see the
@@ -167,18 +168,33 @@ Decisions made during Phase 2 (see also Decision Log):
   points at the physical target, not the camera model. Principal-point "correction" knobs were
   prototyped and removed — they only masked the mismatch.
 - ✅ **Pose smoothing (`OneEuroFilter`) — done.** Optional 1€ filter on the pose matrix,
-  exposed via `smooth` / `smoothMinCutoff` / `smoothBeta` on `nft-anchor` (on by default).
+  exposed via `smooth` / `smoothMinCutoff` / `smoothBeta` / `smoothRotationBeta` on `nft-anchor`
+  (on by default).
   First implemented in-house; now `src/poseFilter.js` wraps WebARKit's
   `@webarkit/oneeurofilter-ts`, converting the Hz cutoffs to the package's per-millisecond
-  units. `test/poseFilter.test.js` pins that the smoothing is unchanged.
+  units. It filters the rotation on its tangent space (`src/so3.js`) and the translation as a
+  vector, so the pose stays rigid, as jsartoolkitNFT 1.16 does for its own filter
+  ([jsartoolkitNFT#766](https://github.com/webarkit/jsartoolkitNFT/issues/766)). Filtering the 16
+  values one by one, as earlier versions did, gave the rotation scale and shear.
+  `test/poseFilter.test.js` pins the translation to the earlier output.
+
+  Rotation and translation share `smoothMinCutoff`, a frequency, but each has its own beta, because
+  beta is per unit of the signal. One value drove both at first, and the 0.01 that suits millimetres
+  barely opens the cutoff for radians: rotation ran 2.6 s behind on a hand-held motion, against
+  0.3 s for translation. `smoothRotationBeta` defaults to 2, which brings rotation to the same delay
+  and leaves translation exactly as it was. A shared 1 Hz / 0.01 was the alternative: it needs no new
+  attribute and has lower error on the move, because it speeds up translation too, but its fixed
+  low-pass also applies at rest, with 2.4 times the shake at 30 fps and 3.8 times at 15 fps. Measured
+  on real tracker poses with a synthetic camera. This is where `src/poseFilter.js` differs from
+  jsartoolkitNFT's `oneEuro.ts`, in which one pair still drives both.
 - ✅ **Multi-marker — `<a-nft>` per target, visibility derived locally.** Several `<a-nft>`
   elements each anchor their own target. Three upstream constraints originally shaped this;
   **jsartoolkitNFT 1.13.0 lifts all three**:
   - `lostNFTMarker` was single-marker
     ([jsartoolkitNFT#611](https://github.com/webarkit/jsartoolkitNFT/issues/611)). It is
-    per-marker since 1.13.0, but we still derive visibility from pose timestamps
-    (`lostTimeout`): it is tunable where the upstream timeout is fixed at 200 ms, and it
-    behaves the same on any library version.
+    per-marker since 1.13.0. We first derived visibility from pose timestamps instead,
+    because its timeout was fixed at 200 ms; since 1.16.0 the tracker API's `lost` transitions
+    do this, with a tunable `lostTimeout` (see below).
   - `addNFTMarkers` was single-call
     ([#612](https://github.com/webarkit/jsartoolkitNFT/issues/612)). Fixed in 1.13.0 (#666):
     ids continue across calls and earlier markers stay loaded. Markers now load **one call
@@ -189,12 +205,68 @@ Decisions made during Phase 2 (see also Decision Log):
     every loaded marker at once; the `continuousDetection` / `detectionInterval` system
     attributes expose its detection policy.
 
-  jsartoolkitNFT cannot unload a marker and holds at most 20, so a removed `<a-nft>` parks
-  its tracker id in `MarkerRegistry`, and re-adding the same `url` reuses it.
-- ✅ **`getImage()` returns the captured frame instead of a per-call copy** (#6) — safe
-  because `process()` copies the pixels into the WASM heap synchronously.
-- Worker-based detection (Approach A) as a perf optimization (#7). Re-evaluate against
-  jsartoolkitNFT's threaded build (`@webarkit/jsartoolkit-nft/td`), which since 1.13.0 runs
-  detection off the main thread but uses pthreads (SharedArrayBuffer, so the page must be
-  cross-origin isolated with COOP/COEP headers).
+  jsartoolkitNFT cannot unload a marker and holds at most 20, so `MarkerRegistry` loads each
+  distinct `url` at most once per tracker: two `<a-nft>` with the same `url`, a re-added `<a-nft>`
+  (even while its first load is still in flight), or a runtime `url` change all share that one
+  loaded target and its size (#11, #15), with each `<a-nft>` keeping its own 1€ filter. When the
+  same `<a-nft>` element is removed and appended again, A-Frame does not re-run `init()`, so
+  `nft-anchor` registers again on the entity's `loaded` event (#15).
+- ✅ **Tracker API (jsartoolkitNFT 1.16.0).** `createNFTTracker` replaces `ARControllerNFT`, which
+  has no `dispose()` ([#780](https://github.com/webarkit/jsartoolkitNFT/issues/780)). Targets load
+  through `addNFTTargets`, whose per-source results say why a load failed. `process()` returns the
+  poses and debounced `lost` transitions, so the pose-timestamp bookkeeping is gone: its rule is the
+  same, more than `lostTimeout` ms untracked. `found` is not used, because a re-added `<a-nft>` can
+  adopt a target already tracked, which fires no new `found`. `tracker.configure()` applies runtime
+  changes (#13). The smoothing stack is unchanged: the tracker's `'native'` filter plus the per-anchor
+  1€ filter, because the tracker's own `filter` setting is per tracker and cannot express per-`<a-nft>`
+  settings. Checked when migrating: in Chromium on the default build, controller and tracker gave
+  identical poses over 40 frames (maximum absolute difference 0), and the camera matrix is identical.
+- ✅ **Camera through `@webarkit/camera-view`.** `CameraView` replaces the private
+  `cameraViewRenderer`, with the same frame geometry. `projectionFor` replaces the hand scaling of
+  the camera matrix, and gives exactly the same numbers. `videoWidth` / `videoHeight` stay `ideal`
+  capture sizes through its `deps.mediaDevices`, because it only sends a width range. Its `getImage()`
+  returns a new copy on every call, which partly undoes the fix for #6 (one `ImageData` reused between
+  captures). That is accepted: repeated frames skip `process()` (#12), so the cost is one 307 KB copy,
+  tiny next to a detection pass, and a fresh copy is what a Worker needs anyway. The frame counter
+  follows the frame-rate gate, not the camera, so a camera slower than `targetFrameRate` can still
+  have a picture processed twice. Teardown (#16) hangs on an internal `arnft-lifecycle` component on
+  the scene, because A-Frame never calls `remove()` on a system. That component does not run before
+  the scene has loaded, so a `MutationObserver` covers that time.
+- ✅ **Tracking in a Worker, on request (#7).** `arnft="worker: true"` uses jsartoolkitNFT's own Worker
+  through `createNFTTrackerWorker`, which supersedes the protocol #7 proposed. `build: 'auto'` picks
+  `td` on a cross-origin isolated page and `simd` otherwise. One bundle, and the four Worker files are
+  copied next to it at build time. **Ticket #7's off-thread goal is met only on request (`worker: true`),
+  and the default stays `false` whatever the desktop numbers say: changing it is a separate decision.**
+  A Worker requires the four Worker files to be served from the page's origin (with `workerBase` when the
+  bundle is loaded from a CDN or as an ES module), downloads the tracker's WASM twice, adds a frame of
+  pose latency, and phone measurements have not been taken yet. If the Worker cannot start within 30 s,
+  the page tracks on the same thread with a warning and caches that fallback so later frame-size restarts
+  stay on the same thread; missing files reject at once. A Worker that fails while running hides the content once
+  and stops, with no restart on the same thread, to keep one recovery path. That includes a rejected
+  `addNFTTargets`, which reports a failed load in its result and so only rejects when the tracker
+  itself failed. There is no watchdog for a Worker that hangs with no error: nothing suggests it
+  happens. A restart waits for the old Worker to go, at most 2 s by the package's `dispose()`. A start
+  overtaken by a restart is not waited for: it is disposed when it resolves, and does not fall back if
+  it fails, so on a frame-size change during start-up two Workers can overlap for the length of that
+  start. Under `npm run dev`, Vite transforms the Worker files (inline source maps take
+  them from 716 KB to 2 MB), and they still run, so the dev server needs nothing special.
+
+  Measured on a desktop only, not a phone: 8 threads, headless Chromium with software GL, a fake camera,
+  320×240 frames, two targets, medians over about 400 frames. The tracker's build differs between the
+  columns, as it will in use: `default` on the same thread, `simd` in the Worker.
+
+  | Desktop | Same thread | Worker |
+  |---|---|---|
+  | Searching, `processMs` (p95) | 41 ms (59) | 142 ms (661) |
+  | Searching, time between page frames | 50 ms | 16.7 ms |
+  | Tracking, `processMs` (p95) | 2.9 ms (10) | 9.9 ms (38) |
+  | Tracking, time between page frames | 16.7 ms | 16.7 ms |
+  | 80×60 canvas, so software GL costs little: searching, `processMs` (p95) | 40 ms (45) | 83 ms (175) |
+  | 80×60 canvas: tracking, `processMs` (p95) | 2.7 ms (3.8) | 3.5 ms (4.1) |
+
+  The search no longer holds up the page, which is what the Worker is for, but each search takes about
+  twice as long in the Worker even with little else running. The cause was not investigated. Elsewhere
+  the larger Worker numbers come at least partly from the page now rendering at full rate on the same
+  CPU, because they mostly go away with the small canvas. Pose latency with the small canvas is 3.7 ms
+  in the Worker against 2.8 ms on the same thread. Phone numbers: not measured yet.
 - Optional tracking-confidence threshold (not yet implemented).

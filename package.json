@@ -1,8 +1,16 @@
 {
-  "name": "aframe-nft",
-  "version": "0.2.0",
+  "name": "@webarkit/aframe-nft",
+  "version": "0.3.0",
   "description": "A-Frame NFT (Natural Feature Tracking) AR components powered by jsartoolkitNFT",
   "main": "dist/AframeNft.js",
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "scripts": {
     "test": "vitest run",
@@ -32,8 +40,9 @@
   },
   "homepage": "https://github.com/webarkit/Aframe-nft#readme",
   "dependencies": {
-    "@webarkit/jsartoolkit-nft": "1.13.0",
-    "@webarkit/oneeurofilter-ts": "0.2.0",
+    "@webarkit/camera-view": "0.1.0",
+    "@webarkit/jsartoolkit-nft": "1.16.0",
+    "@webarkit/oneeurofilter-ts": "0.3.0",
     "aframe": "1.8.0"
   },
   "devDependencies": {

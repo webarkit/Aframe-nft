@@ -1,125 +1,272 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MarkerRegistry } from '../src/markerRegistry.js';
-import { loadPendingMarkers, MAX_MARKERS } from '../src/markerLoader.js';
+import { loadPendingMarkers } from '../src/markerLoader.js';
 
 const marker = (name) => ({ name, url: `DataNFT/${name}`, component: {} });
 
-// Stand-in for jsartoolkitNFT 1.13.0's ARControllerNFT. loadNFTMarker only
-// records the request, so each test decides how (and whether) the tracker
-// answers, through the recorded callbacks.
-function fakeController() {
+// Stand-in for jsartoolkitNFT's tracker. addNFTTargets only records the request,
+// so each test decides how (and whether) the tracker answers.
+function fakeTracker() {
     return {
         requests: [],
-        tracked: [],
-        loadNFTMarker(url, onSuccess, onError) {
-            this.requests.push({ url, onSuccess, onError });
-            return Promise.resolve([]);
-        },
-        trackNFTMarkerId(id) {
-            this.tracked.push(id);
-        },
-        getNFTData(id) {
-            return { width: 100 + id, height: 200 + id, dpi: 72 };
+        addNFTTargets(sources, opts) {
+            return new Promise((resolve, reject) => this.requests.push({ sources, opts, resolve, reject }));
         },
     };
 }
 
+const loaded = (id, url = 'DataNFT/a') => [
+    {
+        status: 'loaded',
+        info: { id, url, widthPx: 100, heightPx: 200, dpi: 72, widthMm: 35.3, heightMm: 70.5, origin: 'corner' },
+    },
+];
+const size = { width: 100, height: 200, dpi: 72 };
+
 function setup(...names) {
-    const ar = fakeController();
+    const tracker = fakeTracker();
     const registry = new MarkerRegistry();
     const markers = names.map((name) => registry.add(marker(name)));
-    const handlers = { onLoaded: vi.fn(), onFailed: vi.fn() };
-    return { ar, registry, markers, handlers };
+    const handlers = { onLoaded: vi.fn(), onFailed: vi.fn(), onTrackerFailed: vi.fn() };
+    return { tracker, registry, markers, handlers };
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('loadPendingMarkers', () => {
-    it('issues one loadNFTMarker call per unloaded marker', () => {
-        const { ar, registry, handlers } = setup('a', 'b');
-        loadPendingMarkers(ar, registry, handlers);
-        expect(ar.requests.map((req) => req.url)).toEqual(['DataNFT/a', 'DataNFT/b']);
+    it('issues one addNFTTargets call per unloaded marker, with corner origin', () => {
+        const { tracker, registry, handlers } = setup('a', 'b');
+        loadPendingMarkers(tracker, registry, handlers);
+        expect(tracker.requests.map((req) => req.sources)).toEqual([['DataNFT/a'], ['DataNFT/b']]);
+        expect(tracker.requests[0].opts).toEqual({ origin: 'corner' });
     });
 
     it('does not request a marker again while it is loading', () => {
-        const { ar, registry, handlers } = setup('a');
-        loadPendingMarkers(ar, registry, handlers);
-        loadPendingMarkers(ar, registry, handlers);
-        expect(ar.requests).toHaveLength(1);
+        const { tracker, registry, handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        loadPendingMarkers(tracker, registry, handlers);
+        expect(tracker.requests).toHaveLength(1);
     });
 
-    it('records the id, tracks it and hands the marker data to onLoaded', () => {
-        const { ar, registry, markers: [a], handlers } = setup('a');
-        loadPendingMarkers(ar, registry, handlers);
-        ar.requests[0].onSuccess(0);
+    it('records the id and maps the target info to the size onData expects', async () => {
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        tracker.requests[0].resolve(loaded(0));
+        await flush();
         expect(a.id).toBe(0);
-        expect(registry.get(0)).toBe(a);
-        expect(ar.tracked).toEqual([0]);
-        expect(handlers.onLoaded).toHaveBeenCalledWith(a, { width: 100, height: 200, dpi: 72 });
+        expect(registry.recordsFor(0)).toEqual([a]);
+        expect(handlers.onLoaded).toHaveBeenCalledWith(a, size);
     });
 
-    it('loads a marker added after others are already loaded (#5)', () => {
-        const { ar, registry, markers: [a], handlers } = setup('a');
-        loadPendingMarkers(ar, registry, handlers);
-        ar.requests[0].onSuccess(0);
+    it('asks the tracker only once for two <a-nft> with the same url (#11)', async () => {
+        const { tracker, registry, markers: [first, second], handlers } = setup('a', 'a');
+        loadPendingMarkers(tracker, registry, handlers);
+        expect(tracker.requests).toHaveLength(1);
+        tracker.requests[0].resolve(loaded(0));
+        await flush();
+        expect(first.id).toBe(0);
+        expect(second.id).toBe(0);
+        expect(handlers.onLoaded).toHaveBeenCalledWith(first, size);
+        expect(handlers.onLoaded).toHaveBeenCalledWith(second, size);
+    });
+
+    it('reports a failed load to every <a-nft> waiting on that url (#11)', async () => {
+        const { tracker, registry, markers: [first, second], handlers } = setup('a', 'a');
+        loadPendingMarkers(tracker, registry, handlers);
+        tracker.requests[0].resolve([{ status: 'error', url: 'DataNFT/a', reason: 'network', message: '404' }]);
+        await flush();
+        expect(first.failed).toBe(true);
+        expect(second.failed).toBe(true);
+        expect(handlers.onFailed).toHaveBeenCalledWith(first, 'network: 404');
+        expect(handlers.onFailed).toHaveBeenCalledWith(second, 'network: 404');
+    });
+
+    it('loads a marker added after others are already loaded (#5)', async () => {
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        tracker.requests[0].resolve(loaded(0));
+        await flush();
 
         const late = registry.add(marker('late'));
-        loadPendingMarkers(ar, registry, handlers);
-        expect(ar.requests.map((req) => req.url)).toEqual(['DataNFT/a', 'DataNFT/late']);
-        ar.requests[1].onSuccess(1);
+        loadPendingMarkers(tracker, registry, handlers);
+        expect(tracker.requests.map((req) => req.sources)).toEqual([['DataNFT/a'], ['DataNFT/late']]);
+        tracker.requests[1].resolve(loaded(1, 'DataNFT/late'));
+        await flush();
         expect(late.id).toBe(1);
         expect(a.id).toBe(0);
     });
 
-    it('fails only the marker whose load failed', () => {
-        const { ar, registry, markers: [a, b], handlers } = setup('a', 'b');
-        loadPendingMarkers(ar, registry, handlers);
-        ar.requests[0].onError(404);
-        ar.requests[1].onSuccess(0);
+    it('fails only the marker whose load failed', async () => {
+        const { tracker, registry, markers: [a, b], handlers } = setup('a', 'b');
+        loadPendingMarkers(tracker, registry, handlers);
+        tracker.requests[0].resolve([{ status: 'error', url: 'DataNFT/a', reason: 'network', message: '404' }]);
+        tracker.requests[1].resolve(loaded(0, 'DataNFT/b'));
+        await flush();
         expect(a.failed).toBe(true);
         expect(b.id).toBe(0);
-        expect(handlers.onFailed).toHaveBeenCalledWith(a, 404);
         expect(handlers.onLoaded).toHaveBeenCalledTimes(1);
-    });
-
-    it('reports a failure once even when every descriptor file fails', () => {
-        // Upstream calls onError once per failed file: .fset, .iset and .fset3.
-        const { ar, registry, handlers } = setup('a');
-        loadPendingMarkers(ar, registry, handlers);
-        ar.requests[0].onError(404);
-        ar.requests[0].onError(404);
-        ar.requests[0].onError(404);
         expect(handlers.onFailed).toHaveBeenCalledTimes(1);
     });
 
-    it('treats a load that returns no id as a failure (tracker full)', () => {
-        // Past MAX_MARKERS the tracker answers onSuccess with no id instead of
-        // calling onError.
-        const { ar, registry, markers: [a], handlers } = setup('a');
-        loadPendingMarkers(ar, registry, handlers);
-        ar.requests[0].onSuccess(undefined);
+    it('reports the reason a load failed (#14)', async () => {
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        tracker.requests[0].resolve([{ status: 'error', url: 'DataNFT/a', reason: 'capacity', message: 'full' }]);
+        await flush();
         expect(a.failed).toBe(true);
         expect(a.id).toBeNull();
         expect(handlers.onLoaded).not.toHaveBeenCalled();
-        expect(handlers.onFailed.mock.calls[0][1]).toContain(String(MAX_MARKERS));
+        expect(handlers.onFailed).toHaveBeenCalledWith(a, 'capacity: full');
     });
 
-    it('treats a rejected load as a failure', async () => {
-        const { ar, registry, markers: [a], handlers } = setup('a');
-        ar.loadNFTMarker = () => Promise.reject(new Error('boom'));
-        loadPendingMarkers(ar, registry, handlers);
+    it('treats a rejected call as the tracker failing: a failed load is a result, not a rejection', async () => {
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        const error = new Error('NFTTracker worker: crashed');
+        loadPendingMarkers(tracker, registry, handlers);
+        tracker.requests[0].reject(error);
         await flush();
         expect(a.failed).toBe(true);
-        expect(handlers.onFailed).toHaveBeenCalledTimes(1);
+        expect(handlers.onTrackerFailed).toHaveBeenCalledWith(error);
+        expect(handlers.onFailed).not.toHaveBeenCalled();
     });
 
-    it('does not hand data to a marker removed while it was loading', () => {
-        const { ar, registry, markers: [a], handlers } = setup('a');
-        loadPendingMarkers(ar, registry, handlers);
+    it('does not report a throw from the component as a failed load', async () => {
+        // The target did load and is tracked: calling it a load failure would send
+        // the user looking for a network or descriptor problem that is not there.
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        const bug = new Error('bad mesh');
+        handlers.onLoaded.mockImplementation(() => {
+            throw bug;
+        });
+        loadPendingMarkers(tracker, registry, handlers);
+        tracker.requests[0].resolve(loaded(0));
+        await flush();
+        expect(a.failed).toBe(false);
+        expect(a.id).toBe(0);
+        expect(handlers.onFailed).not.toHaveBeenCalled();
+        expect(log.mock.calls[0][0]).toContain('arnft:');
+        expect(log.mock.calls[0][1]).toBe(bug);
+        log.mockRestore();
+    });
+
+    it('does not hand data to a marker removed while it was loading', async () => {
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
         registry.remove(a);
-        ar.requests[0].onSuccess(0);
+        tracker.requests[0].resolve(loaded(0));
+        await flush();
         expect(handlers.onLoaded).not.toHaveBeenCalled();
         // The dataset is kept for the next <a-nft> with the same url.
-        expect(registry.add(marker('a')).id).toBe(0);
+        const again = registry.add(marker('a'));
+        expect(again.id).toBe(0);
+        expect(again.data).toEqual(size);
+    });
+});
+
+describe('loadPendingMarkers after a removal', () => {
+    it('does not report a failed load for a marker already removed', async () => {
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        registry.remove(a);
+        tracker.requests[0].resolve([{ status: 'error', url: 'DataNFT/a', reason: 'network', message: '404' }]);
+        await flush();
+        expect(handlers.onFailed).not.toHaveBeenCalled();
+    });
+});
+
+describe('loadPendingMarkers when the tracker was replaced', () => {
+    it('ignores a load that finishes after resetLoadState', async () => {
+        const { tracker, registry, markers: [a, b], handlers } = setup('a', 'b');
+        loadPendingMarkers(tracker, registry, handlers);
+        registry.resetLoadState();
+        tracker.requests[0].resolve(loaded(0));
+        tracker.requests[1].reject(new Error('NFTTracker: disposed'));
+        await flush();
+        expect(a.id).toBeNull();
+        expect(b.failed).toBe(false);
+        expect(handlers.onLoaded).not.toHaveBeenCalled();
+        expect(handlers.onFailed).not.toHaveBeenCalled();
+    });
+
+    it('does not let an old answer touch the newer load of the same marker', async () => {
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        registry.resetLoadState();
+        loadPendingMarkers(tracker, registry, handlers);
+        expect(tracker.requests).toHaveLength(2);
+
+        tracker.requests[0].reject(new Error('NFTTracker: disposed'));
+        tracker.requests[1].resolve(loaded(7));
+        await flush();
+        expect(a.failed).toBe(false);
+        expect(a.id).toBe(7);
+        expect(handlers.onLoaded).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('loadPendingMarkers on a load that does not answer', () => {
+    let warn;
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        warn.mockRestore();
+        vi.useRealTimers();
+    });
+
+    it('warns once after 30 s, naming the marker', async () => {
+        const { tracker, registry, handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        await vi.advanceTimersByTimeAsync(29999);
+        expect(warn).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0]).toContain('arnft:');
+        expect(warn.mock.calls[0][0]).toContain('"a"');
+        await vi.advanceTimersByTimeAsync(60000);
+        expect(warn).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not fail the marker, because the load may still finish', async () => {
+        // The tracker has no per-target signal, so the load cannot be cancelled.
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(a.failed).toBe(false);
+        expect(handlers.onFailed).not.toHaveBeenCalled();
+
+        tracker.requests[0].resolve(loaded(0));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(a.id).toBe(0);
+        expect(handlers.onLoaded).toHaveBeenCalledWith(a, size);
+    });
+
+    it('stays quiet when the load answers in time', async () => {
+        const { tracker, registry, handlers } = setup('a', 'b');
+        loadPendingMarkers(tracker, registry, handlers);
+        tracker.requests[0].resolve(loaded(0));
+        tracker.requests[1].resolve([{ status: 'error', url: 'DataNFT/b', reason: 'network', message: '404' }]);
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('stays quiet about a load belonging to a replaced tracker', async () => {
+        const { tracker, registry, handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        registry.resetLoadState();
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('stays quiet about a marker removed while it was loading', async () => {
+        const { tracker, registry, markers: [a], handlers } = setup('a');
+        loadPendingMarkers(tracker, registry, handlers);
+        registry.remove(a);
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(warn).not.toHaveBeenCalled();
     });
 });

@@ -32,7 +32,9 @@
             <a-box color="#4CC3D9"></a-box>
         </a-nft>
 
-        <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+        <!-- Not <a-camera>: on some phones its look-controls stops a page like this,
+             which loads its script as a module, from starting. See the README. -->
+        <a-entity camera position="0 0 0"></a-entity>
 
     </a-scene>
 </div>

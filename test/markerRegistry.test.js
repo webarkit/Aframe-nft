@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { MarkerRegistry } from '../src/markerRegistry.js';
 
 const marker = (name) => ({ name, url: `${name}.fset`, component: {} });
+const size = { width: 1, height: 2, dpi: 3 };
 
 describe('MarkerRegistry load state', () => {
     it('reports newly added markers as unloaded', () => {
@@ -21,8 +22,16 @@ describe('MarkerRegistry load state', () => {
         const r = new MarkerRegistry();
         const a = r.add(marker('a'));
         r.markLoading(a);
-        r.setId(a, 0);
+        r.finishLoad(a.url, 0, size);
         expect(r.unloaded()).toEqual([]);
+    });
+
+    it('keeps the size of a loaded target on its record', () => {
+        const r = new MarkerRegistry();
+        const a = r.add(marker('a'));
+        r.markLoading(a);
+        r.finishLoad(a.url, 0, size);
+        expect(a.data).toEqual(size);
     });
 
     it('treats a load failure as terminal and does not offer it for retry', () => {
@@ -31,7 +40,7 @@ describe('MarkerRegistry load state', () => {
         const r = new MarkerRegistry();
         const a = r.add(marker('a'));
         r.markLoading(a);
-        r.markLoadFailed(a);
+        r.failLoad(a.url);
         expect(a.failed).toBe(true);
         expect(r.unloaded()).toEqual([]);
     });
@@ -40,7 +49,8 @@ describe('MarkerRegistry load state', () => {
         // The #5 case: a marker registered after the tracker is already running.
         const r = new MarkerRegistry();
         const a = r.add(marker('a'));
-        r.setId(a, 0);
+        r.markLoading(a);
+        r.finishLoad(a.url, 0, size);
         r.add(marker('b'));
         expect(r.unloaded().map((m) => m.name)).toEqual(['b']);
     });
@@ -48,97 +58,66 @@ describe('MarkerRegistry load state', () => {
     it('looks markers up by tracker id', () => {
         const r = new MarkerRegistry();
         const a = r.add(marker('a'));
-        r.setId(a, 7);
-        expect(r.get(7)).toBe(a);
-        expect(r.get(99)).toBeNull();
+        r.markLoading(a);
+        r.finishLoad(a.url, 7, size);
+        expect(r.recordsFor(7)).toEqual([a]);
+        expect(r.recordsFor(99)).toEqual([]);
     });
 });
 
-describe('MarkerRegistry visibility', () => {
-    const seeded = () => {
+describe('MarkerRegistry for a new tracker', () => {
+    it('hasLoaded is false until a registered record has an id', () => {
         const r = new MarkerRegistry();
-        const a = r.setId(r.add(marker('a')), 0);
-        const b = r.setId(r.add(marker('b')), 1);
-        return { r, a, b };
-    };
-
-    it('markSeen stamps the marker and makes it visible', () => {
-        const { r, a } = seeded();
-        expect(r.markSeen(0, 1000)).toBe(a);
-        expect(a.visible).toBe(true);
-        expect(a.lastSeen).toBe(1000);
+        const a = r.add(marker('a'));
+        expect(r.hasLoaded()).toBe(false);
+        r.markLoading(a);
+        r.finishLoad(a.url, 0, size);
+        expect(r.hasLoaded()).toBe(true);
+        r.remove(a);
+        expect(r.hasLoaded()).toBe(false);
     });
 
-    it('markSeen returns null for an unknown id', () => {
-        const { r } = seeded();
-        expect(r.markSeen(42, 1000)).toBeNull();
+    it('resetLoadState offers every record for loading again, parked ids forgotten', () => {
+        // Ids belong to one tracker: on the next one they would mean other targets.
+        const r = new MarkerRegistry();
+        const a = r.add(marker('a'));
+        r.markLoading(a);
+        r.finishLoad(a.url, 0, size);
+        const b = r.add(marker('b'));
+        r.markLoading(b);
+        r.finishLoad(b.url, 1, size);
+        r.remove(b);
+        const before = r.generation;
+        r.resetLoadState();
+        expect(r.generation).toBe(before + 1);
+        expect(a.id).toBeNull();
+        expect(a.data).toBeNull();
+        expect(r.recordsFor(0)).toEqual([]);
+        expect(r.unloaded()).toEqual([a]);
+        expect(r.add(marker('b')).id).toBeNull();
     });
 
-    it('does not report a marker that is still fresh', () => {
-        const { r } = seeded();
-        r.markSeen(0, 1000);
-        expect(r.collectStale(1100, 200)).toEqual([]);
-    });
-
-    it('reports a marker once it goes stale', () => {
-        const { r, a } = seeded();
-        r.markSeen(0, 1000);
-        expect(r.collectStale(1300, 200)).toEqual([a]);
-        expect(a.visible).toBe(false);
-    });
-
-    it('reports each stale marker exactly once', () => {
-        const { r } = seeded();
-        r.markSeen(0, 1000);
-        expect(r.collectStale(1300, 200)).toHaveLength(1);
-        expect(r.collectStale(1400, 200)).toEqual([]);
-    });
-
-    it('never reports a marker that has not been seen yet', () => {
-        // Guards against hiding meshes (and spurious onLost) before first detection.
-        const { r } = seeded();
-        expect(r.collectStale(99999, 200)).toEqual([]);
-    });
-
-    it('expires markers independently — the #8 ghost-mesh case', () => {
-        // Both visible; only `a` leaves the frame. `b` must be untouched.
-        const { r, a, b } = seeded();
-        r.markSeen(0, 1000);
-        r.markSeen(1, 1000);
-        r.markSeen(1, 1250); // b keeps being seen
-
-        expect(r.collectStale(1300, 200)).toEqual([a]);
-        expect(a.visible).toBe(false);
-        expect(b.visible).toBe(true);
-    });
-
-    it('becomes visible again when a stale marker is re-acquired', () => {
-        const { r, a } = seeded();
-        r.markSeen(0, 1000);
-        r.collectStale(1300, 200);
-        r.markSeen(0, 1400);
-        expect(a.visible).toBe(true);
-        expect(r.collectStale(1450, 200)).toEqual([]);
+    it('resetLoadState also offers a record that was loading or had failed', () => {
+        const r = new MarkerRegistry();
+        const loading = r.add(marker('a'));
+        r.markLoading(loading);
+        const failed = r.add(marker('b'));
+        r.markLoading(failed);
+        r.failLoad(failed.url);
+        r.resetLoadState();
+        expect(r.unloaded()).toEqual([loading, failed]);
     });
 });
 
-describe('MarkerRegistry removal', () => {
+describe('MarkerRegistry removal and shared targets (#11)', () => {
     it('stops routing poses to a removed marker', () => {
         const r = new MarkerRegistry();
-        const a = r.setId(r.add(marker('a')), 0);
+        const a = r.add(marker('a'));
+        r.markLoading(a);
+        r.finishLoad(a.url, 0, size);
         r.remove(a);
         expect(r.has(a)).toBe(false);
-        expect(r.get(0)).toBeNull();
-        expect(r.markSeen(0, 1000)).toBeNull();
-    });
-
-    it('never reports a removed marker as stale', () => {
-        // A removed <a-nft> must not receive onLost after it is gone.
-        const r = new MarkerRegistry();
-        const a = r.setId(r.add(marker('a')), 0);
-        r.markSeen(0, 1000);
-        r.remove(a);
-        expect(r.collectStale(1300, 200)).toEqual([]);
+        expect(r.recordsFor(0)).toEqual([]);
     });
 
     it('ignores removing a marker that is not registered', () => {
@@ -152,39 +131,104 @@ describe('MarkerRegistry removal', () => {
         // jsartoolkitNFT cannot unload a marker and holds at most 20, so a
         // re-added <a-nft> must not load its target a second time.
         const r = new MarkerRegistry();
-        r.remove(r.setId(r.add(marker('a')), 0));
+        const a = r.add(marker('a'));
+        r.markLoading(a);
+        r.finishLoad(a.url, 0, size);
+        r.remove(a);
         const again = r.add(marker('a'));
         expect(again.id).toBe(0);
-        expect(r.get(0)).toBe(again);
+        expect(r.recordsFor(0)).toEqual([again]);
         expect(r.unloaded()).toEqual([]);
+    });
+
+    it('gives a re-added marker the size of the loaded target', () => {
+        // The tracker has no getNFTData(), so the size must survive the removal.
+        const r = new MarkerRegistry();
+        const a = r.add(marker('a'));
+        r.markLoading(a);
+        r.finishLoad(a.url, 0, size);
+        r.remove(a);
+        expect(r.add(marker('a')).data).toEqual(size);
     });
 
     it('does not reuse an id for a different url', () => {
         const r = new MarkerRegistry();
-        r.remove(r.setId(r.add(marker('a')), 0));
+        const a = r.add(marker('a'));
+        r.markLoading(a);
+        r.finishLoad(a.url, 0, size);
+        r.remove(a);
         const b = r.add(marker('b'));
         expect(b.id).toBeNull();
+        expect(b.data).toBeNull();
         expect(r.unloaded()).toEqual([b]);
     });
 
-    it('hands each parked id out only once', () => {
-        // Two <a-nft> with the same url, both loaded, then both removed.
+    it('gives two live records with the same url the same id, with no second load', () => {
         const r = new MarkerRegistry();
-        const first = r.setId(r.add(marker('a')), 0);
-        const second = r.setId(r.add(marker('a')), 1);
-        r.remove(first);
-        r.remove(second);
-        const ids = [r.add(marker('a')).id, r.add(marker('a')).id, r.add(marker('a')).id];
-        expect(ids).toEqual([0, 1, null]);
+        const a = r.add(marker('a'));
+        const a2 = r.add(marker('a'));
+        expect(r.markLoading(a)).toBe(true);
+        expect(r.markLoading(a2)).toBe(false);
+        expect(r.finishLoad(a.url, 0, size)).toEqual([a, a2]);
+        expect(r.recordsFor(0)).toEqual([a, a2]);
+        expect(a2.id).toBe(0);
+        expect(a2.data).toEqual(size);
     });
 
-    it('parks the id when a marker is removed while its load is in flight', () => {
+    it('gives a record added after a target loaded the same id at once', () => {
+        const r = new MarkerRegistry();
+        const a = r.add(marker('a'));
+        r.markLoading(a);
+        r.finishLoad(a.url, 0, size);
+        const a2 = r.add(marker('a'));
+        expect(a2.id).toBe(0);
+        expect(a2.data).toEqual(size);
+        expect(r.recordsFor(0)).toEqual([a, a2]);
+        expect(r.unloaded()).toEqual([]);
+    });
+
+    it('a record added during a load joins it (add, remove, add)', () => {
+        const r = new MarkerRegistry();
+        const first = r.add(marker('a'));
+        r.markLoading(first);
+        r.remove(first);
+        const second = r.add(marker('a'));
+        expect(r.unloaded()).toEqual([]);
+        expect(r.finishLoad(first.url, 0, size)).toEqual([second]);
+        expect(second.id).toBe(0);
+    });
+
+    it('a load with nobody waiting keeps the target for the next record', () => {
         const r = new MarkerRegistry();
         const a = r.add(marker('a'));
         r.markLoading(a);
         r.remove(a);
-        expect(r.setId(a, 3)).toBeNull();
-        expect(r.get(3)).toBeNull();
-        expect(r.add(marker('a')).id).toBe(3);
+        expect(r.finishLoad(a.url, 3, size)).toEqual([]);
+        expect(r.recordsFor(3)).toEqual([]);
+        const again = r.add(marker('a'));
+        expect(again.id).toBe(3);
+        expect(again.data).toEqual(size);
+    });
+
+    it('a failure reaches every record waiting on that url', () => {
+        const r = new MarkerRegistry();
+        const a = r.add(marker('a'));
+        const a2 = r.add(marker('a'));
+        r.markLoading(a);
+        r.markLoading(a2);
+        expect(r.failLoad(a.url)).toEqual([a, a2]);
+        expect(a2.failed).toBe(true);
+    });
+
+    it('keeps routing to the records that remain when one of several is removed', () => {
+        const r = new MarkerRegistry();
+        const a = r.add(marker('a'));
+        const a2 = r.add(marker('a'));
+        r.markLoading(a);
+        r.markLoading(a2);
+        r.finishLoad(a.url, 0, size);
+        r.remove(a);
+        expect(r.recordsFor(0)).toEqual([a2]);
+        expect(r.hasLoaded()).toBe(true);
     });
 });

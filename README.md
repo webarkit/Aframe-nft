@@ -7,7 +7,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/webarkit/Aframe-nft)](https://github.com/webarkit/Aframe-nft/issues)
 [![Last commit](https://img.shields.io/github/last-commit/webarkit/Aframe-nft)](https://github.com/webarkit/Aframe-nft/commits)
 [![A-Frame 1.8.0](https://img.shields.io/badge/A--Frame-1.8.0-ef2d5e.svg)](https://aframe.io)
-[![jsartoolkitNFT 1.13.0](https://img.shields.io/badge/jsartoolkitNFT-1.13.0-2a6ebb.svg)](https://github.com/webarkit/jsartoolkitNFT)
+[![jsartoolkitNFT 1.16.0](https://img.shields.io/badge/jsartoolkitNFT-1.16.0-2a6ebb.svg)](https://github.com/webarkit/jsartoolkitNFT)
 
 A-Frame components for markerless AR with **NFT (Natural Feature Tracking)** image targets,
 powered by [jsartoolkitNFT](https://github.com/webarkit/jsartoolkitNFT).
@@ -21,9 +21,9 @@ follows the printed image in the camera view.
 ```
 
 > **Status:** early (0.x; see the [changelog](CHANGELOG.md)). The `<a-nft>` API is small and
-> stable in spirit, but may still change before 1.0. An npm package is coming soon; until
-> then, use the bundle from this repository (see
-> [Using it in your page](#using-it-in-your-page-)).
+> stable in spirit, but may still change before 1.0. Available as an npm package
+> [`@webarkit/aframe-nft`](https://www.npmjs.com/package/@webarkit/aframe-nft) or as a standalone
+> bundle (see [Using it in your page](#using-it-in-your-page-)).
 
 ## Contents
 
@@ -47,6 +47,8 @@ follows the printed image in the camera view.
   same time, each with its own pose.
 - **Dynamic scenes** — `<a-nft>` elements can be added and removed while the scene runs.
 - **Stable poses** — optional 1€ smoothing reduces jitter without adding lag while moving.
+- **Optional Web Worker** — tracking can run off the page's thread, and falls back to it if the
+  Worker cannot start.
 - **Correct registration** — the video and the WebGL canvas share the same box (the AR.js
   approach), so the 3D lines up with the video for any camera parameter file, with no
   per-device tweaking.
@@ -77,10 +79,15 @@ on a screen.
 
 ## Using it in your page 📝
 
-**Get the bundle.** Until the npm package is published, which is planned soon, build
-`dist/AframeNft.js` with `npm run build` or copy the one committed in this repository. It is a
-single script that **already contains A-Frame (1.8.0) and jsartoolkitNFT**, so do not load
-A-Frame separately.
+**Install or get the bundle:**
+
+```bash
+npm install @webarkit/aframe-nft
+```
+
+Alternatively, build `dist/AframeNft.js` with `npm run build` or use the bundle committed in this
+repository. It is a single script that **already contains A-Frame (1.8.0) and jsartoolkitNFT**,
+so do not load A-Frame separately.
 
 A page needs four things:
 
@@ -89,8 +96,8 @@ A page needs four things:
    `video`.
 3. **An `<a-scene embedded arnft>`.** `embedded` lets the canvas be sized to match the video;
    `arnft` configures the tracker.
-4. **An `<a-camera>` at the origin with `look-controls` disabled.** Poses are relative to the
-   camera, so the camera itself must not move.
+4. **A camera entity at the origin:** `<a-entity camera position="0 0 0">`. Poses are relative to
+   the camera, so the camera itself must not move.
 
 ```html
 <!DOCTYPE html>
@@ -118,7 +125,7 @@ A page needs four things:
           <a-box color="#4CC3D9"></a-box>
         </a-nft>
 
-        <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+        <a-entity camera position="0 0 0"></a-entity>
       </a-scene>
     </div>
   </body>
@@ -133,6 +140,8 @@ Notes:
 - **Relative paths.** Relative `url` and `cameraParam` paths resolve against the page, like
   any other asset URL.
 - **`autoplay muted playsinline`** are required on the video for mobile Safari.
+- **Removing the scene.** Removing `<a-scene>` stops the camera and releases the tracker. To
+  start again, create a new scene: re-attaching a removed one is not supported.
 
 ### Several targets
 
@@ -159,13 +168,40 @@ document.querySelector('a-scene').appendChild(nft);
 nft.remove();
 ```
 
-See [`examples/dynamic.html`](examples/dynamic.html) for a working page. Two caveats:
+See [`examples/dynamic.html`](examples/dynamic.html) for a working page. Each target `url` is
+loaded at most once per scene: adding another `<a-nft>` with the same `url`, re-appending a
+removed `<a-nft>`, or changing `url` at runtime reuses an already loaded (or in-flight) target
+instead of loading it again, because jsartoolkitNFT cannot unload a target.
 
-- **Bring a target back by creating a new element.** A-Frame does not re-initialise
-  components when the *same* element is appended again, so a re-appended `<a-nft>` stays
-  hidden ([#15](https://github.com/webarkit/Aframe-nft/issues/15)).
-- **Removed targets stay loaded.** jsartoolkitNFT cannot unload a target. Adding a new
-  `<a-nft>` with the same `url` reuses the loaded one instead of loading it again.
+### Tracking in a Web Worker
+
+By default tracking runs on the page's thread, where a search for a target can hold up rendering.
+`worker: true` moves it to a Web Worker:
+
+```html
+<a-scene embedded arnft="worker: true">
+```
+
+See `examples/worker.html`. The target loading, the projection and the content stay on the page,
+and each scene has one Worker. If the Worker cannot start, the page tracks on its own thread and
+logs `arnft: could not start the tracking Worker`. Missing files are noticed at once; a server that
+never answers takes 30 s.
+
+- **Serve the Worker files next to the bundle.** They are in `dist/`: `NFTTracker.worker.js`,
+  `NFTTracker_simd.worker.js`, `NFTTracker_td.worker.js` and `NFTTracker_td.pthread.js`, about 2.9 MB
+  in total. A page uses only one or two of them.
+- **Same origin.** A browser only starts a Worker from the page's own origin. If the bundle comes from
+  a CDN, copy the four files to your site and point `workerBase` at them, for example
+  `arnft="worker: true; workerBase: /nft/"`.
+- **`workerBase` is also needed when the script is a module**, as under `npm run dev`, because the
+  bundle cannot then tell which folder it came from. With a plain `<script>` you can leave it out.
+- **Threads.** On a cross-origin isolated page (`COOP` and `COEP` headers) the threaded build is used
+  on its own, with no attribute for it.
+- **Costs.** A pose arrives about one frame later than on the same thread, and the page downloads the
+  tracker's WASM twice: inside `AframeNft.js`, and in the Worker file.
+- **If a running Worker fails**, also while a target loads, the console shows one
+  `arnft: the tracker failed` error, the content is hidden and tracking stops until the page is
+  reloaded.
 
 ## Image targets 🎯
 
@@ -218,11 +254,27 @@ exact target in [webarkit/jsfeatNext#142](https://github.com/webarkit/jsfeatNext
 | `continuousDetection` | boolean | `true` | Keep looking for untracked targets while others are tracked. `false` is cheapest, but a second target entering the view is then not found |
 | `detectionInterval` | number | `300` | Minimum time (ms) between searches for untracked targets while others are tracked; `0` searches every frame |
 | `logLevel` | string | `warn` | Tracker console verbosity: `debug`, `info`, `warn` or `error`. `info` adds ARToolKit's per-frame tracking lines (`[info] Tracked page 0` …), useful when debugging detection |
+| `worker` | boolean | `false` | Track in a Web Worker, falling back to the page's thread if it cannot start. See [Tracking in a Web Worker](#tracking-in-a-web-worker) |
+| `workerBase` | string | empty | Folder of the Worker files, relative to the page and ending in `/`. Empty means next to the bundle |
 
-`continuousDetection`, `detectionInterval` and `logLevel` are read once, when tracking starts
-([#13](https://github.com/webarkit/Aframe-nft/issues/13)). `logLevel` does not reach
-jsartoolkitNFT's start-up lines or its `webarkit-info` lines
-([webarkit/jsartoolkitNFT#677](https://github.com/webarkit/jsartoolkitNFT/issues/677)).
+`worker` and `workerBase` are read once, when the first tracker is created. `continuousDetection`, `detectionInterval`, `lostTimeout` and `logLevel` can change while tracking
+runs:
+
+```js
+document.querySelector('a-scene').setAttribute('arnft', 'detectionInterval: 0');
+```
+
+- **Repeat the settings you have changed.** A-Frame rebuilds a system's settings from what you
+  pass, so any key you leave out goes back to its default.
+- **Use the string form.** The three-argument form,
+  `setAttribute('arnft', 'detectionInterval', 0)`, does not work on a system: it is ignored, with a
+  warning in the console.
+- **A value the tracker refuses changes nothing.** The tracker applies a change in one step, and
+  `arnft: could not apply the new settings` in the console names the bad value.
+
+`logLevel` also governs jsartoolkitNFT's start-up lines. Only the camera parameter table still
+prints at every level
+([webarkit/WebARKitLib#113](https://github.com/webarkit/WebARKitLib/issues/113)).
 
 ### `<a-nft>` primitive — the `nft-anchor` component
 
@@ -244,8 +296,9 @@ The remaining properties are set through the component, for example
 | `offsetX` | number | `0` | Extra X offset in target millimetres (rarely needed) |
 | `offsetY` | number | `0` | Extra Y offset in target millimetres (rarely needed) |
 | `smooth` | boolean | `true` | 1€ pose smoothing (reduces jitter) |
-| `smoothMinCutoff` | number | `0.0001` | Smoothing at rest: lower is smoother but lags more |
-| `smoothBeta` | number | `0.01` | Speed response: higher lags less while moving |
+| `smoothMinCutoff` | number | `0.0001` | Smoothing at rest, for rotation and translation: lower is smoother but lags more |
+| `smoothBeta` | number | `0.01` | Translation's speed response, per millimetre: higher lags less while moving, and shakes more |
+| `smoothRotationBeta` | number | `2` | Rotation's speed response, per radian: higher lags less while moving, and shakes more |
 
 The content is centred on the target automatically, using the target's real-world size.
 
@@ -254,7 +307,7 @@ The content is centred on the target automatically, using the target's real-worl
 At start-up the bundle logs its version, right after A-Frame's own lines:
 
 ```
-Aframe-nft 0.2.0 (jsartoolkitNFT 1.13.0)
+Aframe-nft 0.3.0 (jsartoolkitNFT 1.16.0)
 ```
 
 The same version is available from code as `AframeNft.version`.
@@ -269,13 +322,33 @@ build and the jsartoolkitNFT version inside it.
 | Error | What it means |
 |---|---|
 | `NotAllowedError` | Camera permission was denied, or the page is not in a secure context (see the HTTPS note above). |
-| `NotReadableError` | The camera could not start, usually because another application is using it. Virtual cameras that cannot start (for example those installed by Meta Quest Link) are skipped automatically. |
+| `NotReadableError` | The camera could not start, usually because another application is using it. On a desktop the browser's default camera is used: if that is a virtual camera that cannot start, choose another one in the browser's settings. |
+| a `CameraViewError` with code `NOT_SUPPORTED` | The browser has no camera API. |
 | a `TypeError` mentioning `srcObject` | The page has no `<video id="video">` element. |
 
-**`arnft: failed to load NFT marker "…"`.** The descriptor set could not be loaded:
-- check that `url` has **no** extension and that the path resolves relative to the page (the
-  Network tab shows the 404s);
-- a page can hold at most 20 targets.
+**`arnft: the camera stream ended; tracking has stopped`.** The camera was unplugged, or the
+permission was revoked. The content is hidden. Reload the page to start again.
+
+**On a phone the scene never starts, with `Cannot read properties of undefined (reading
+'permissionGranted')` in the console.** This comes from `look-controls` in A-Frame 1.8.0, which
+`<a-camera>` includes. It happens when A-Frame loads after the scene has been parsed, as with a
+`type="module"` script, in a browser that has `DeviceOrientationEvent.requestPermission`, such as
+Chrome 156 on Android. Use `<a-entity camera>`, or load the bundle with a plain `<script>` in
+`<head>`.
+
+**`arnft: failed to load NFT marker "…"`.** The descriptor set could not be loaded. The message
+ends with the reason:
+
+| Reason | What it means |
+|---|---|
+| `network` | An HTTP error, a network failure or a missing file. Check that `url` has **no** extension and that the path resolves relative to the page; the Network tab shows the requests. |
+| `format` | A `.zft` that could not be decompressed. See the note on `.zft` below. |
+| `capacity` | A page can hold at most 20 targets. |
+| `unknown` | The tracker refused the descriptors, which may be unreadable, for example a corrupt `.fset`. |
+
+**`arnft: NFT marker "…" has not loaded after 30 s`.** The server took the request and has not
+answered, and the Network tab shows it as pending. Other targets keep tracking, and this one still
+appears if the answer arrives.
 
 **`404 (Not Found)` errors for `….zft` at start-up.** These are expected, one per target. They
 are harmless as long as no `arnft: failed to load NFT marker` error follows.
@@ -283,6 +356,9 @@ are harmless as long as no `arnft: failed to load NFT marker` error follows.
   compressed `.zft` version exists next to them, and falls back to the three files when it does
   not.
 - The browser logs the failed check as an error.
+- A server that answers a missing file with an HTML page and status 200, as single-page-app
+  hosting often does, makes the check look like a `.zft`, and the load fails as `format`. Serve the
+  descriptors from a path without that fallback.
 - See [webarkit/jsartoolkitNFT#676](https://github.com/webarkit/jsartoolkitNFT/issues/676).
 
 **The target is not detected.**
@@ -303,47 +379,58 @@ it on the plane instead.
 ```mermaid
 flowchart LR
     CAM["camera"] --> VIDEO["video element (id=video)"]
-    VIDEO --> CVR["cameraViewRenderer<br/>320×240 frames"]
-    CVR --> ARC["ARControllerNFT<br/>jsartoolkitNFT"]
+    VIDEO --> CVR["CameraView<br/>320×240 frames"]
+    CVR --> TRK["createNFTTracker<br/>jsartoolkitNFT"]
     subgraph SYS ["arnft system"]
-        ARC
+        TRK
         REG["MarkerRegistry"]
         LOAD["markerLoader"]
+        FR["frames.js"]
     end
     NFT["a-nft (nft-anchor)"] -- registerMarker --> REG
-    LOAD -- loadNFTMarker --> ARC
-    ARC -- "getNFTMarker (per target, per frame)" --> REG
-    REG -- "onPose / onLost" --> NFT
+    LOAD -- addNFTTargets --> TRK
+    TRK -- "process(): poses and lost, per frame" --> FR
+    REG -- "which a-nft has this id" --> FR
+    FR -- "onPose / onLost" --> NFT
 ```
 
 1. **Camera.** The `arnft` system opens the camera, preferring the rear camera on phones.
-   `cameraViewRenderer` draws each frame into a 320×240 processing canvas, letterboxing
-   non-4:3 video.
+   `CameraView`, from [`@webarkit/camera-view`](https://github.com/webarkit/camera-view), draws
+   each frame into a 320×240 processing canvas, letterboxing non-4:3 video.
 2. **Tracker.** Once the camera is live and at least one `<a-nft>` exists, the system creates
-   a single `ARControllerNFT` and applies its projection to the A-Frame camera. There is one
-   tracker per scene, not one per target.
-3. **Targets.** Each `<a-nft>` registers with the system. `markerLoader` loads its descriptor
-   set with one call per target, so a bad `url` only affects its own `<a-nft>`.
-   `MarkerRegistry` tracks load state, visibility and reusable ids.
-4. **Each frame.** `process()` detects and tracks every loaded target. Each pose is routed to
-   its `nft-anchor`, which:
+   a single tracker with `createNFTTracker` and applies its projection to the A-Frame camera.
+   There is one tracker per scene, not one per target.
+3. **Targets.** Each `<a-nft>` registers with the system. `markerLoader` loads each distinct
+   descriptor `url` once, with one call per target, so a bad `url` only affects the `<a-nft>`
+   elements using it. `MarkerRegistry` tracks load state and shares loaded targets across
+   `<a-nft>` elements with the same `url`.
+4. **Each new frame.** `process()` detects and tracks every loaded target. It is skipped when no
+   target is loaded, or when there is no new frame yet. Each pose is routed to its `nft-anchor`,
+   which:
    - smooths the pose (1€ filter);
    - centres the content using the target's real size (DPI → mm);
    - scales and lifts it.
 
-   A target not seen for `lostTimeout` ms is hidden.
+   Content stays hidden until its target's first pose, and is hidden again once the target
+   has been untracked for more than `lostTimeout` ms.
 5. **Alignment.** The video and the WebGL canvas are sized to the same "cover" box, so the
-   projection maps 3D onto exactly the video's pixels.
+   projection maps 3D onto exactly the video's pixels. When the video changes size, for example
+   on a rotated phone, the projection follows. If the processing frame changes size too, the
+   tracker is replaced and the targets load again.
 
 | Module | Responsibility |
 |--------|----------------|
 | [`src/index.js`](src/index.js) | Entry point: importing it registers everything, logs the version banner and exports `version` |
 | [`src/registerNFT.js`](src/registerNFT.js) | A-Frame glue: the `arnft` system, the `nft-anchor` component, the `<a-nft>` primitive |
-| [`src/cameraViewRenderer.js`](src/cameraViewRenderer.js) | Camera stream and processing frames |
-| [`src/markerRegistry.js`](src/markerRegistry.js) | Target bookkeeping: load state, visibility, reusable ids |
+| [`src/cameraConstraints.js`](src/cameraConstraints.js) | Keeps `videoWidth` / `videoHeight` as ideal capture sizes with `CameraView` |
+| [`src/markerRegistry.js`](src/markerRegistry.js) | Target bookkeeping: one load per `url`, shared target ids |
 | [`src/markerLoader.js`](src/markerLoader.js) | Loads descriptor sets into the tracker |
+| [`src/frames.js`](src/frames.js) | Picks the next frame to process, and routes each `process()` result to the `<a-nft>` components |
+| [`src/trackerSettings.js`](src/trackerSettings.js) | Turns `arnft` attributes into tracker settings |
+| [`src/trackerFactory.js`](src/trackerFactory.js) | Creates the tracker on the same thread or in a Worker, with the fallback between them |
 | [`src/nftMath.js`](src/nftMath.js) | Pose geometry: centring, lift, matrix normalisation |
-| [`src/poseFilter.js`](src/poseFilter.js) | 1€ pose smoothing, on top of [`@webarkit/oneeurofilter-ts`](https://github.com/webarkit/OneEuroFilter-ts) |
+| [`src/poseFilter.js`](src/poseFilter.js) | 1€ pose smoothing that keeps the pose rigid, on top of [`@webarkit/oneeurofilter-ts`](https://github.com/webarkit/OneEuroFilter-ts) |
+| [`src/so3.js`](src/so3.js) | Rotation maths for the smoothing: log, exp and re-orthogonalisation |
 | [`src/version.js`](src/version.js) | Version and start-up banner, injected from `package.json` at build time |
 | [`src/logLevel.js`](src/logLevel.js) | Maps the `logLevel` attribute to jsartoolkitNFT's `ARLogLevel` |
 
@@ -355,7 +442,7 @@ Design history and the reasons behind these choices are in [DESIGN.md](DESIGN.md
 |---------|--------------|
 | `npm run dev` | Vite dev server with HMR; opens the examples index |
 | `npm test` | Unit tests (Vitest + jsdom) |
-| `npm run build` | Builds the IIFE bundle `dist/AframeNft.js` |
+| `npm run build` | Builds the IIFE bundle `dist/AframeNft.js` and copies the tracker's Worker files next to it |
 | `npm run preview` | Serves a production build |
 
 CI (GitHub Actions) runs the tests and the build on every push to `main`/`dev` and on every
@@ -379,12 +466,12 @@ Bug reports and pull requests are welcome in the
 
 - **At most 20 targets per page.** jsartoolkitNFT holds at most 20 targets and cannot unload
   one.
-- **Main-thread detection.** Detection runs on the main thread. Moving it off the main thread
-  is tracked in [#7](https://github.com/webarkit/Aframe-nft/issues/7).
-- **Runtime adds stall briefly.** Adding an `<a-nft>` at runtime briefly stalls the main thread
-  while its target loads ([#14](https://github.com/webarkit/Aframe-nft/issues/14)).
-- **Runtime `url` changes are ignored.** Changing `url` on an existing `<a-nft>` has no effect;
-  replace the element instead ([#15](https://github.com/webarkit/Aframe-nft/issues/15)).
+- **Tracking runs on the page's thread by default.** A search for a target can then hold up
+  rendering. `worker: true` avoids it; see
+  [Tracking in a Web Worker](#tracking-in-a-web-worker).
+- **Runtime adds stall briefly on the same thread.** Adding an `<a-nft>` at runtime briefly stalls
+  the page while the tracker builds the target's feature set. `worker: true` avoids that too. The
+  downloads and the `.zft` check no longer block.
 
 See the [open issues](https://github.com/webarkit/Aframe-nft/issues) for the full list.
 
@@ -392,6 +479,8 @@ See the [open issues](https://github.com/webarkit/Aframe-nft/issues) for the ful
 
 - [jsartoolkitNFT](https://github.com/webarkit/jsartoolkitNFT) (WebARKit): NFT detection and
   tracking.
+- [camera-view](https://github.com/webarkit/camera-view) (WebARKit): camera capture and processing
+  frames.
 - [A-Frame](https://aframe.io/): the WebXR framework this builds on.
 - [AR.js](https://github.com/AR-js-org/AR.js): the video/canvas alignment approach.
 - The [1€ filter](https://gery.casiez.net/1euro/) (Casiez, Roussel and Vogel, CHI 2012), via
